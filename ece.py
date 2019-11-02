@@ -1,12 +1,11 @@
 import numpy as np
 import torch, torch.nn as nn
-from torch.autograd import Variable
+from torch.autograd import Variable 
 import sys
 import torch.utils.data as Data
-
-glove_file = "/Users/joechou/Desktop"
-train_file = "/Users/joechou/Desktop/KBP-SF48-master"
-word2idx = {}
+glove_file = "./"
+train_file = "./"
+word2idx = {} 
 vectors = []
 
 with open(glove_file+"/glove.6B.50d.txt", "rb") as f:
@@ -52,7 +51,7 @@ def word2idx_array(sentence_list, length, word2idx):
 
 x, word2idx = word2idx_array(train, 82, word2idx)
 y = torch.LongTensor(np.asarray(y, dtype=np.float32))
-dataset = Data.TensorDataset(torch.LongTensor(x), y)
+
 weights_matrix = np.zeros((len(word2idx)+1, 50))
 #word idx
 for word in word2idx:
@@ -100,21 +99,23 @@ class RNN(nn.Module):
         # bidirection 
         self.num_layers *= 2
 
-    def forward(self, input_x, lens):
+    def forward(self, input_x, lens = None):
         # Set initial states
         x = self.embed(input_x)  # dim: (batch_size, max_seq_len, embedding_size)
+        #print(x.shape)
         #leng = torch.as_tensor(82.cpu(), dtype=torch.int64)
-        lens = torch.tensor(lens, dtype=torch.int64, device=torch.device('cpu'))
-        packed_x = pack_padded_sequence(x, lengths = lens, batch_first=True)
+        #lens = torch.tensor(lens, dtype=torch.int64, device=torch.device('cpu'))
+        #data, target, seq = data_helpers.sorting_sequence(data, target, seq, args)
+        #packed_x = pack_padded_sequence(x, lengths = Variable(lens).cuda(), batch_first=True)
 
         h0 = Variable(torch.rand(self.num_layers, x.size(0), self.hidden_size).cuda())
         c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
-        packed_h, packed_h_t = self.rnn(packed_x, h0)
+        packed_h, packed_h_t = self.rnn(x, h0)
         decoded = packed_h_t[-1]
         # Decode hidden state of last time step
         logit = self.fc(decoded)
         return F.log_softmax(logit)
-        return logit
+        #return logit
 
 model = RNN()
 if torch.cuda.is_available():
@@ -129,7 +130,7 @@ if torch.cuda.is_available():
 
 
 
-
+dataset = Data.TensorDataset(torch.LongTensor(x), y)
 train_loader = torch.utils.data.DataLoader(dataset,
                                            batch_size=16,
                                            shuffle=False)
@@ -141,16 +142,14 @@ def train(epoch):
     optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001)
 
     for batch_idx, (data, target) in enumerate(train_loader):
-        #data, target, seq = data_helpers.sorting_sequence(data, target)
-        #data, target = Variable(data).cuda(), Variable(target).cuda()
-        print(data)
-        print(target)
-        data, target = Variable(data), Variable(target)
+        #data, target, =data_helpers.sorting_sequence(data, target)
+        data, target = Variable(data).cuda(), Variable(target).cuda()
+        #print(data)
+        #print(target)
+        #data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
-
-        logit = model(data, 64)
-
-
+        logit = model(data)
+        print(logit)
         loss = F.nll_loss(logit, torch.max(target, 1)[1])
 
         args.lr = data_helpers.lr_decay(loss, args)
