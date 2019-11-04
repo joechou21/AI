@@ -363,6 +363,8 @@ if torch.cuda.is_available():
 optimizer = optim.Adam(model3.parameters())
 
 
+#model.train()
+
 def train(model1, model2, model3, optimizer):
     
     epoch_loss = 0
@@ -371,46 +373,70 @@ def train(model1, model2, model3, optimizer):
     model1.train()
     model2.train()
     model3.train()
-    for batch_idx, (data, target, data2) in enumerate(train_loader):
-        #data, target, =data_helpers.sorting_sequence(data, target)
+    for epoch in range(1, 100):
+        for batch_idx, (data, target, data2) in enumerate(train_loader):
+            #data, target, =data_helpers.sorting_sequence(data, target)
 
-        if torch.cuda.is_available():
-            data, target = Variable(data).cuda(), Variable(target).cuda()
-            data2 = Variable(data2).cuda()
-        else:
-            data, target = Variable(data), Variable(target)
-            data2 = Variable(data2)
+            if torch.cuda.is_available():
+                data, target = Variable(data).cuda(), Variable(target).cuda()
+                data2 = Variable(data2).cuda()
+            else:
+                data, target = Variable(data), Variable(target)
+                data2 = Variable(data2)
 
-        #print(data.shape)
-        #sys.exit()
+            #print(data.shape)
+            #sys.exit()
         
-        optimizer.zero_grad()
-        first = model1(data)
-        print(first.shape)
-        second = model2(data2)
-        print(second.shape)
-        x = torch.cat((first, second), dim =1)
-        logit = model3(x)
-        #loss = criterion(predictions, target)
-        #print(target)
-        #print(torch.max(target, 1)[1])
-        loss = F.nll_loss(logit, target)
-        #print(loss)
+            optimizer.zero_grad()
+            first = model1(data)
+            print(first.shape)
+            second = model2(data2)
+            print(second.shape)
+            x = torch.cat((first, second), dim =1)
+            logit = model3(x)
+            #loss = criterion(predictions, target)
+            #print(target)
+            #print(torch.max(target, 1)[1])
+            loss = F.nll_loss(logit, target)
+            #print(loss)
     
-        loss.backward()
+            loss.backward()
         
-        optimizer.step()
+            optimizer.step()
+
+
+            args.iter += 1
+
+            if args.iter % args.log_interval == 0:
+                corrects_data = (torch.max(logit, 1)[1] == torch.max(target, 1)[1]).data
+                corrects = corrects_data.sum()
+                accuracy = 100.0 * corrects / len(target)
+                print("Batch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})".format(args.iter,
+                                                                              loss.data[0],
+                                                                              accuracy,
+                                                                              corrects,
+                                                                              len(target)))
+            #if args.iter % args.dev_interval == 0:
+            #    dev(model)
+
+            #if args.iter % args.save_interval == 0:
+                #if not os.path.isdir(args.save_dir): os.makedirs(args.save_dir)
+                #torch.save(model, save_path)
         
-        epoch_loss += loss.item()
-        print(epoch_loss)
-        #epoch_acc += acc.item()
+            #epoch_loss += loss.item()
+            #print(epoch_loss)
+            #epoch_acc += acc.item()
         
-    return epoch_loss
+        #return epoch_loss
 
 
 
 
 train(model1, model2, model3, optimizer)
+
+
+
+
 
 
 
