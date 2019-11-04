@@ -258,7 +258,7 @@ dataset = Data.TensorDataset(torch.LongTensor(x), y, torch.LongTensor(x2))
 #dataset = Data.TensorDataset(torch.LongTensor(x2), y)
 train_loader = torch.utils.data.DataLoader(dataset,
                                            batch_size=16,
-                                           shuffle=False)
+                                           shuffle=True)
 
 #model = Combine()
 import torch.optim as optim
@@ -325,6 +325,7 @@ class Highway(nn.Module):
 
         self.f = f
 
+        self.connect = nn.Linear(128, 41)
     def forward(self, x):
         """
             :param x: tensor with shape of [batch_size, size]
@@ -341,7 +342,7 @@ class Highway(nn.Module):
             linear = self.linear[layer](x)
 
             x = gate * nonlinear + (1 - gate) * linear
-
+        x = self.connect(x)
         return F.log_softmax(x, dim=1)
 
 
@@ -351,6 +352,7 @@ model2 = Combine()
 model3 = Highway(128, 1, f= torch.nn.functional.relu)
 #train(23)
 #sys.exit()
+
 
 if torch.cuda.is_available():
     model1.cuda()
@@ -370,6 +372,7 @@ def train(model1, model2, model3, optimizer):
     epoch_loss = 0
     epoch_acc = 0
     
+    iteration = 0    
     model1.train()
     model2.train()
     model3.train()
@@ -389,9 +392,9 @@ def train(model1, model2, model3, optimizer):
         
             optimizer.zero_grad()
             first = model1(data)
-            print(first.shape)
+            #print(first.shape)
             second = model2(data2)
-            print(second.shape)
+            #print(second.shape)
             x = torch.cat((first, second), dim =1)
             logit = model3(x)
             #loss = criterion(predictions, target)
@@ -405,13 +408,18 @@ def train(model1, model2, model3, optimizer):
             optimizer.step()
 
 
-            args.iter += 1
+            iteration += 1
 
-            if args.iter % args.log_interval == 0:
-                corrects_data = (torch.max(logit, 1)[1] == torch.max(target, 1)[1]).data
-                corrects = corrects_data.sum()
-                accuracy = 100.0 * corrects / len(target)
-                print("Batch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})".format(args.iter,
+            #if args.iter % args.log_interval == 0:
+            #print(torch.max(logit, 1)[1])
+            #print(torch.max(logit, 1)[1].shape)
+            #print(target)
+            corrects_data = (torch.max(logit, 1)[1] == target).data
+            #print(corrects_data)
+            corrects = corrects_data.sum()
+            #print(corrects)
+            accuracy = 100.0 * corrects / len(target)
+            print("Batch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})".format(iteration,
                                                                               loss.data[0],
                                                                               accuracy,
                                                                               corrects,
