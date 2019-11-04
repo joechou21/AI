@@ -152,18 +152,23 @@ def train(epoch):
         print(logit)
         loss = F.nll_loss(logit, torch.max(target, 1)[1])
 
-        args.lr = data_helpers.lr_decay(loss, args)
+        #args.lr = data_helpers.lr_decay(loss, args)
 
         loss.backward()
         optimizer.step()
 
-        args.iter += 1
+        iteration += 1
 
-        #if  % args.log_interval == 0:
-        corrects_data = (torch.max(logit, 1)[1] == torch.max(target, 1)[1]).data
+        corrects_data = (torch.max(logit, 1)[1] == target).data
+        #print(corrects_data)
         corrects = corrects_data.sum()
+        #print(corrects)
         accuracy = 100.0 * corrects / len(target)
-        print("loss: {:.6f}  acc: {:.4f}%({}/{})".format(loss.data[0], accuracy, corrects, len(target)))
+        print("Batch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})".format(iteration,
+                                                                              loss.data[0],
+                                                                              accuracy,
+                                                                              corrects,
+                                                                              len(target)))
 
 train(23)
 #random_input = Variable(torch.FloatTensor(5, 1, 1).normal_(), requires_grad=False)
