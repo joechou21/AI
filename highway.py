@@ -23,8 +23,8 @@ with open(glove_file+"/glove.6B.50d.txt", "rb") as f:
 test = []
 train = []
 len_max = 0
-with open("./KBP-SF48-master/train_sf.txt", "rb") as f:  
-#with open(train_file+"/train_sf.txt", "rb") as f:
+#with open("./KBP-SF48-master/train_sf.txt", "rb") as f:  
+with open(train_file+"/train_sf.txt", "rb") as f:
     for l in f:
         line = l.decode().split("\t")
         tmp = len(line[1].split(" "))
@@ -88,7 +88,7 @@ print(emb)
 class RNN(nn.Module):
     def __init__(self):
         super(RNN, self).__init__()
-        self.hidden_size = 512
+        self.hidden_size = 64
         self.num_layers = 1
         self.num_classes = 41
         self.seq_len = 82
@@ -118,14 +118,13 @@ class RNN(nn.Module):
         # Decode hidden state of last time step
         #logit = self.fc(decoded)
         #return F.log_softmax(logit, dim =1)
-        print(decoded.shape)
         return decoded
 
 
 unique = set()
 #max = 0
-with open("./KBP-SF48-master/train_sf.txt", "rb") as f:    
-#with open("./train_sf.txt", "rb") as f:
+#with open("./KBP-SF48-master/train_sf.txt", "rb") as f:    
+with open("./train_sf.txt", "rb") as f:
     for l in f:
         line = l.decode().split("\t")
         chars = list(line[1])
@@ -243,13 +242,12 @@ class Combine(nn.Module):
         #print(c_in.shape)
         c_out = self.cnn(x)
         r_in = c_out.view(batch_size, timesteps, -1)
-        h0 = Variable(torch.rand(1, x.size(0), 64))
+        h0 = Variable(torch.rand(1, r_in.size(0), 64)).cuda()
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
         packed_h, packed_h_t = self.rnn(r_in, h0)
         decoded = packed_h_t[-1]
         #r_out, (h_n, h_c) = self.rnn(r_in)
         #r_out2 = self.linear(r_out[:, -1, :])
-        print(decoded.shape)
         return decoded
         #return F.log_softmax(r_out2, dim=1)
 
@@ -291,19 +289,6 @@ import torch.optim as optim
         #loss.backward()
         #optimizer.step()
 
- 
-model1 = RNN()
-model2 = Combine()
-
-#train(23)
-#sys.exit()
-
-if torch.cuda.is_available():
-    model1.cuda()
-    model2.cuda()
-    print("model will use GPU")
-
-
 
 
 #class HighWay(nn.Module):
@@ -325,30 +310,76 @@ if torch.cuda.is_available():
 #model3 = HighWay(model1, model2)
 #model3.cuda()
 
+class Highway(nn.Module):
+    def __init__(self, size, num_layers, f):
+
+        super(Highway, self).__init__()
+
+        self.num_layers = num_layers
+
+        self.nonlinear = nn.ModuleList([nn.Linear(size, size) for _ in range(num_layers)])
+
+        self.linear = nn.ModuleList([nn.Linear(size, size) for _ in range(num_layers)])
+
+        self.gate = nn.ModuleList([nn.Linear(size, size) for _ in range(num_layers)])
+
+        self.f = f
+
+    def forward(self, x):
+        """
+            :param x: tensor with shape of [batch_size, size]
+            :return: tensor with shape of [batch_size, size]
+            applies σ(x) ⨀ (f(G(x))) + (1 - σ(x)) ⨀ (Q(x)) transformation | G and Q is affine transformation,
+            f is non-linear transformation, σ(x) is affine transformation with sigmoid non-linearition
+            and ⨀ is element-wise multiplication
+            """
+
+        for layer in range(self.num_layers):
+            gate = F.sigmoid(self.gate[layer](x))
+
+            nonlinear = self.f(self.nonlinear[layer](x))
+            linear = self.linear[layer](x)
+
+            x = gate * nonlinear + (1 - gate) * linear
+
+        return F.log_softmax(x, dim=1)
+
+
+ 
+model1 = RNN()
+model2 = Combine()
+model3 = Highway(128, 1, f= torch.nn.functional.relu)
+#train(23)
+#sys.exit()
+
+if torch.cuda.is_available():
+    model1.cuda()
+    model2.cuda()
+    model3.cuda()
+    print("model will use GPU")
 
 
 
+optimizer = optim.Adam(model3.parameters())
 
-optimizer = optim.Adam(model1.parameters())
 
-
-def train(optimizer):
+def train(model1, model2, model3, optimizer):
     
     epoch_loss = 0
     epoch_acc = 0
     
     model1.train()
     model2.train()
-    
+    model3.train()
     for batch_idx, (data, target, data2) in enumerate(train_loader):
         #data, target, =data_helpers.sorting_sequence(data, target)
 
         if torch.cuda.is_available():
             data, target = Variable(data).cuda(), Variable(target).cuda()
-            data2, target2 = Variable(data2).cuda(), Variable(target2).cuda()
+            data2 = Variable(data2).cuda()
         else:
-            data, target = Variable(data).cuda(), Variable(target).cuda()
-            data2, target2 = Variable(data2).cuda(), Variable(target2).cuda()
+            data, target = Variable(data), Variable(target)
+            data2 = Variable(data2)
 
         #print(data.shape)
         #sys.exit()
@@ -358,9 +389,8 @@ def train(optimizer):
         print(first.shape)
         second = model2(data2)
         print(second.shape)
-        sys.exit()
-        #predictions = model(data).squeeze(1)
-        logit = mode3(first, second)
+        x = torch.cat((first, second), dim =1)
+        logit = model3(x)
         #loss = criterion(predictions, target)
         #print(target)
         #print(torch.max(target, 1)[1])
@@ -380,7 +410,7 @@ def train(optimizer):
 
 
 
-train(optimizer)
+train(model1, model2, model3, optimizer)
 
 
 
