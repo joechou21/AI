@@ -182,8 +182,8 @@ class Combine(nn.Module):
         self.embedding_dim = 50
         self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
         self.convolutions = []
-        self.filter_num_width = [(25, 1), (50, 2), (75, 3), (100, 4), (125, 5), (150, 6)]
-        
+        #self.filter_num_width = [(25, 1), (50, 2), (75, 3), (100, 4), (125, 5), (150, 6)]
+        self.filter_num_width = [(25, 1), (50, 2)]
         for out_channel, filter_width in self.filter_num_width:
             self.convolutions.append(
                 nn.Conv2d(
@@ -194,10 +194,10 @@ class Combine(nn.Module):
                     )
             )
         self.input_dim = sum([x for x, y in self.filter_num_width])
-        self.batch_norm = nn.BatchNorm1d(self.input_dim, affine=False)
+        #self.batch_norm = nn.BatchNorm1d(self.input_dim, affine=False)
         self.num_classes = 41
         self.rnn = nn.GRU(
-            input_size=525, 
+            input_size=75, 
             hidden_size=64, 
             num_layers=1,
             batch_first=True)
@@ -239,8 +239,9 @@ class Combine(nn.Module):
         #print(x.shape)
         # [num_seq*seq_len, 1, max_word_len, char_emb_dim]
         x = self.conv_layers(x)
+        #print(x.shape)
         # [num_seq*seq_len, total_num_filters]
-        x = self.batch_norm(x)
+        #x = self.batch_norm(x)
         #print(x)
         x = x.contiguous().view(gru_batch_size, gru_seq_len, -1)
         #print(x.shape)
@@ -264,7 +265,7 @@ class Combine(nn.Module):
 dataset = Data.TensorDataset(torch.LongTensor(x), y, torch.LongTensor(x2))
 #dataset = Data.TensorDataset(torch.LongTensor(x2), y)
 train_loader = torch.utils.data.DataLoader(dataset,
-                                           batch_size=16,
+                                           batch_size=8,
                                            shuffle=True)
 
 import torch.optim as optim
