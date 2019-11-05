@@ -5,7 +5,8 @@ import sys
 import torch.utils.data as Data
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-
+#import os
+#os.environ['CUDA_VISIBLE_DEVICES']='1, 2, 3'
 glove_file = "./"
 train_file = "./"
 word2idx = {} 
@@ -76,8 +77,8 @@ def char2idx_array(sentence_list, timestep, char2idx, length=9):
 
 
 x2 = char2idx_array(train, len_max, char2idx, 9)
-#print(train[0])
-#for char in x2[0][1]:
+#print(train[1])
+#for char in x2[1][2]:
 #    print(idx2char[char])
 #sys.exit()
 
@@ -129,20 +130,26 @@ class Combine(nn.Module):
                 nn.Conv2d(
                     1,           # in_channel
                     out_channel, # out_channel
-                    kernel_size=(char_emb_dim, filter_width), # (height, width)
+                    kernel_size=(50, filter_width), # (height, width)
                     bias=True
                     )
             )
         self.input_dim = sum([x for x, y in self.filter_num_width])
-        self.batch_norm = nn.BatchNorm1d(self.highway_input_dim, affine=False)
+        self.batch_norm = nn.BatchNorm1d(self.input_dim, affine=False)
         self.num_classes = 41
         self.rnn = nn.GRU(
-            input_size=460, 
+            input_size=525, 
             hidden_size=64, 
             num_layers=1,
             batch_first=True)
         #self.linear = nn.Linear(64,10)
         self.fc = nn.Linear(64, self.num_classes) 
+        if True:
+            for x in range(len(self.convolutions)):
+                self.convolutions[x] = self.convolutions[x].cuda()
+            self.rnn = self.rnn.cuda()
+            self.embedding = self.embedding.cuda()
+            self.batch_norm = self.batch_norm.cuda()    
     
     def conv_layers(self, x):
         chosen_list = list()
@@ -154,7 +161,7 @@ class Combine(nn.Module):
             chosen = chosen.squeeze()
             # (batch_size, out_channel)
             chosen_list.append(chosen)
-
+        return torch.cat(chosen_list, 1)
 
     def forward(self, x):
 
@@ -162,17 +169,25 @@ class Combine(nn.Module):
         gru_seq_len = x.size()[1]
         x = x.contiguous().view(-1, x.size()[2])
         # [num_seq*seq_len, max_word_len]
+        #print(x.shape)
         x = self.embedding(x)
+
         # [num_seq*seq_len, max_word_len, char_emb_dim]
+        #print(x.shape)
+        #x = x.view(x.size()[0], 1, x.size()[1], -1)
+        #print(x.shape)
         x = torch.transpose(x.view(x.size()[0], 1, x.size()[1], -1), 2, 3)
+        #print(x.shape)
         # [num_seq*seq_len, 1, max_word_len, char_emb_dim]
         x = self.conv_layers(x)
         # [num_seq*seq_len, total_num_filters]
         x = self.batch_norm(x)
+        #print(x)
         x = x.contiguous().view(gru_batch_size, gru_seq_len, -1)
-        h0 = Variable(torch.rand(1, r_in.size(0), 64)).cuda()
+        #print(x.shape)
+        h0 = Variable(torch.rand(1, x.size(0), 64)).cuda()
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
-        packed_h, packed_h_t = self.rnn(r_in, h0)
+        packed_h, packed_h_t = self.rnn(x, h0)
         decoded = packed_h_t[-1]
         #r_out, (h_n, h_c) = self.rnn(r_in)
         #r_out2 = self.linear(r_out[:, -1, :])
@@ -187,7 +202,7 @@ class Combine(nn.Module):
 y = torch.LongTensor(np.asarray(test, dtype=np.float32))
 dataset = Data.TensorDataset(torch.LongTensor(x2), y)
 train_loader = torch.utils.data.DataLoader(dataset,
-                                           batch_size=16,
+                                           batch_size=8,
                                            shuffle=True)
 
 #model = Combine()
@@ -308,8 +323,9 @@ def train(model2, optimizer):
             #loss = criterion(predictions, target)
             #print(target)
             #print(torch.max(target, 1)[1])
-            #loss = F.nll_loss(logit, target)
-            loss = nn.CrossEntropyLoss(logit, target)
+            #print(logit)
+            loss = F.nll_loss(logit, target)
+            #loss = nn.CrossEntropyLoss(logit, target)
             #print(loss)
     
             loss.backward()
