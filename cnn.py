@@ -133,6 +133,8 @@ class Combine(nn.Module):
                     bias=True
                     )
             )
+        self.input_dim = sum([x for x, y in self.filter_num_width])
+        self.batch_norm = nn.BatchNorm1d(self.highway_input_dim, affine=False)
         self.num_classes = 41
         self.rnn = nn.GRU(
             input_size=460, 
@@ -141,6 +143,19 @@ class Combine(nn.Module):
             batch_first=True)
         #self.linear = nn.Linear(64,10)
         self.fc = nn.Linear(64, self.num_classes) 
+    
+    def conv_layers(self, x):
+        chosen_list = list()
+        for conv in self.convolutions:
+            feature_map = F.tanh(conv(x))
+            # (batch_size, out_channel, 1, max_word_len-width+1)
+            chosen = torch.max(feature_map, 3)[0]
+            # (batch_size, out_channel, 1)            
+            chosen = chosen.squeeze()
+            # (batch_size, out_channel)
+            chosen_list.append(chosen)
+
+
     def forward(self, x):
 
         gru_batch_size = x.size()[0]
