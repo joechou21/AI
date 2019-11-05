@@ -134,11 +134,13 @@ with open("./train_sf.txt", "rb") as f:
 
 unique = list(unique)
 char2idx = {}
+idx2char = {}
 
-
+char2idx[""] = 0
+idx2char[0] = ""
 for i, char in enumerate(unique):
-    char2idx[char] = i
-
+    char2idx[char] = i+1
+    idx2char[i+1] = char
 print(len(char2idx))
 
 
@@ -146,10 +148,12 @@ def char2idx_array(sentence_list, timestep, char2idx, length=9):
 
     idx_array = np.zeros((len(sentence_list), timestep,  length))
     for i, x in enumerate(sentence_list):
-        idx_tmp = np.empty((0, 1), int)
+       
         idx = 0
-        words = x.split()
+        words = x.split(" ")
+        #print(words)
         for idx, word in enumerate(words):
+            idx_tmp = np.empty((0, 1), int)
             for char in list(word):
                 idx_tmp = np.vstack((idx_tmp, int(char2idx[char])))
         
@@ -167,89 +171,92 @@ def char2idx_array(sentence_list, timestep, char2idx, length=9):
 
 
 
+
 x2 = char2idx_array(train, len_max, char2idx, 9)
-
-#print(x2)
-#print(x2.shape)
-#print(x2[1, 1, :])
-
-
-
-
-class CNN(nn.Module):
-    def __init__(self):
-        super(CNN, self).__init__()
-        self.vocab_size = 82
-        self.embedding_dim = 50
-        self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        #self.conv2_drop = nn.Dropout2d()
-        #self.fc1 = nn.Linear(320, 50)
-        #self.fc2 = nn.Linear(50, 10)
-
-    def forward(self, x):
-
-        embedded = self.embedding(x)
-        batch, timestep, charlen, dim=embedded.shape
-        #x = embedded.view(16, -1)
-        embedded = embedded.view(batch * timestep, 1, charlen , dim)
-        #print("here")
-        x = F.relu(F.max_pool2d(self.conv1(embedded), 2))
-        #print("pass")
-        #x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        
-        #print(x.shape)
-        x = x.view(-1, 460)
-
-        #embedded = embedded.permute(1, 0, 2)
-        
-        #embedded = [batch size, sent len, emb dim]
-        
-        #pooled = F.avg_pool2d(embedded, (embedded.shape[1], 1)).squeeze(1) 
-        
-        #pooled = [batch size, embedding_dim]
-                
-        #logit = self.fc(pooled)
-        #return F.log_softmax(logit)
-
-
-
-        #x = F.relu(self.fc1(x))
-        #x = F.dropout(x, training=self.training)
-        #x = self.fc2(x)
-        #return F.log_softmax(x, dim=1)
-        return x
-
-
 
 class Combine(nn.Module):
     def __init__(self):
         super(Combine, self).__init__()
-        self.cnn = CNN()
+        #self.cnn = CNN()
+        self.vocab_size = 83
+        self.embedding_dim = 50
+        self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
+        self.convolutions = []
+        self.filter_num_width = [(25, 1), (50, 2), (75, 3), (100, 4), (125, 5), (150, 6)]
+        
+        for out_channel, filter_width in self.filter_num_width:
+            self.convolutions.append(
+                nn.Conv2d(
+                    1,           # in_channel
+                    out_channel, # out_channel
+                    kernel_size=(50, filter_width), # (height, width)
+                    bias=True
+                    )
+            )
+        self.input_dim = sum([x for x, y in self.filter_num_width])
+        self.batch_norm = nn.BatchNorm1d(self.input_dim, affine=False)
+        self.num_classes = 41
         self.rnn = nn.GRU(
-            input_size=460, 
+            input_size=525, 
             hidden_size=64, 
             num_layers=1,
             batch_first=True)
-        self.linear = nn.Linear(64,10)
+        #self.linear = nn.Linear(64,10)
+        self.fc = nn.Linear(64, self.num_classes) 
+        if True:
+            for x in range(len(self.convolutions)):
+                self.convolutions[x] = self.convolutions[x].cuda()
+            self.rnn = self.rnn.cuda()
+            self.embedding = self.embedding.cuda()
+            self.batch_norm = self.batch_norm.cuda()    
+    
+    def conv_layers(self, x):
+        chosen_list = list()
+        for conv in self.convolutions:
+            feature_map = F.tanh(conv(x))
+            # (batch_size, out_channel, 1, max_word_len-width+1)
+            chosen = torch.max(feature_map, 3)[0]
+            # (batch_size, out_channel, 1)            
+            chosen = chosen.squeeze()
+            # (batch_size, out_channel)
+            chosen_list.append(chosen)
+        return torch.cat(chosen_list, 1)
 
     def forward(self, x):
-        batch_size, timesteps, charlens = x.size()
-        #c_in = x.view(batch_size * timesteps, charlens)
-        #for x in c_in:
-        #    print(x)
-        #print(c_in.shape)
-        c_out = self.cnn(x)
-        r_in = c_out.view(batch_size, timesteps, -1)
-        h0 = Variable(torch.rand(1, r_in.size(0), 64)).cuda()
+
+        gru_batch_size = x.size()[0]
+        gru_seq_len = x.size()[1]
+        x = x.contiguous().view(-1, x.size()[2])
+        # [num_seq*seq_len, max_word_len]
+        #print(x.shape)
+        x = self.embedding(x)
+
+        # [num_seq*seq_len, max_word_len, char_emb_dim]
+        #print(x.shape)
+        #x = x.view(x.size()[0], 1, x.size()[1], -1)
+        #print(x.shape)
+        x = torch.transpose(x.view(x.size()[0], 1, x.size()[1], -1), 2, 3)
+        #print(x.shape)
+        # [num_seq*seq_len, 1, max_word_len, char_emb_dim]
+        x = self.conv_layers(x)
+        # [num_seq*seq_len, total_num_filters]
+        x = self.batch_norm(x)
+        #print(x)
+        x = x.contiguous().view(gru_batch_size, gru_seq_len, -1)
+        #print(x.shape)
+        h0 = Variable(torch.rand(1, x.size(0), 64)).cuda()
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
-        packed_h, packed_h_t = self.rnn(r_in, h0)
+        packed_h, packed_h_t = self.rnn(x, h0)
         decoded = packed_h_t[-1]
         #r_out, (h_n, h_c) = self.rnn(r_in)
         #r_out2 = self.linear(r_out[:, -1, :])
+        #logit = self.fc(decoded)
         return decoded
-        #return F.log_softmax(r_out2, dim=1)
+        #return F.log_softmax(logit, dim=1)
+
+
+
+
 
 
 
@@ -260,55 +267,10 @@ train_loader = torch.utils.data.DataLoader(dataset,
                                            batch_size=16,
                                            shuffle=True)
 
-#model = Combine()
 import torch.optim as optim
 
-#if args.cuda:
-#model.cuda()
+
 #optimizer = optim.Adam(model.parameters())
-
-#def train(epoch):
-    #mode2.train()
-    #model.train()
-    #for batch_idx, (data, target) in enumerate(train_loader):
-        
-
-        #data = torch.LongTensor(data)
-        #if args.cuda:
-        #    data, target = data.cuda(), target.cuda()
-            
-
-        
-        #data, target = Variable(data), Variable(target)
-        #optimizer.zero_grad()
-        #print(data.shape)
-        #output = model(data)
-
-        
-        #loss = F.nll_loss(output, target)
-        #loss.backward()
-        #optimizer.step()
-
-
-
-#class HighWay(nn.Module):
-#    def __init_(self, modelA, modelB):
-#        super(MyEnsemble, self).__init__()
-#        self.modelA = modelA
-#        self.modelB = modelB
-#        self.output_dim = 41
-#        self.classifier = nn.Linear(4,2)
-#    def forward(self, x1, x2):
-#        x1 = self.modelA(x1)
-#        x2 = self.modelB(x2)
-#        x = torch.cat((x1,x2), dim =1)
-#        x = self.classifier(F.relu(x))
-
- #       return x
-
-
-#model3 = HighWay(model1, model2)
-#model3.cuda()
 
 class Highway(nn.Module):
     def __init__(self, size, num_layers, f):
