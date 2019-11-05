@@ -91,12 +91,7 @@ x2 = char2idx_array(train, len_max, char2idx, 9)
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.vocab_size = 83
-        self.embedding_dim = 50
-        self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
+        
         #self.fc1 = nn.Linear(320, 50)
         #self.fc2 = nn.Linear(50, 10)
 
@@ -122,7 +117,22 @@ class CNN(nn.Module):
 class Combine(nn.Module):
     def __init__(self):
         super(Combine, self).__init__()
-        self.cnn = CNN()
+        #self.cnn = CNN()
+        self.vocab_size = 83
+        self.embedding_dim = 50
+        self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
+        self.convolutions = []
+        self.filter_num_width = [(25, 1), (50, 2), (75, 3), (100, 4), (125, 5), (150, 6)]
+        
+        for out_channel, filter_width in self.filter_num_width:
+            self.convolutions.append(
+                nn.Conv2d(
+                    1,           # in_channel
+                    out_channel, # out_channel
+                    kernel_size=(char_emb_dim, filter_width), # (height, width)
+                    bias=True
+                    )
+            )
         self.num_classes = 41
         self.rnn = nn.GRU(
             input_size=460, 
@@ -132,16 +142,19 @@ class Combine(nn.Module):
         #self.linear = nn.Linear(64,10)
         self.fc = nn.Linear(64, self.num_classes) 
     def forward(self, x):
-        batch_size, timesteps, charlens = x.size()
-        #c_in = x.view(batch_size * timesteps, charlens)
-        #for x in c_in:
-        #    print(x)
-        #print(c_in.shape)
-        c_out = self.cnn(x)
-        #print(c_out.shape)
-        r_in = c_out.view(batch_size, timesteps, -1)
-        #print(r_in.shape)
-        #sys.exit()
+
+        gru_batch_size = x.size()[0]
+        gru_seq_len = x.size()[1]
+        x = x.contiguous().view(-1, x.size()[2])
+        # [num_seq*seq_len, max_word_len]
+        x = self.embedding(x)
+        # [num_seq*seq_len, max_word_len, char_emb_dim]
+        x = torch.transpose(x.view(x.size()[0], 1, x.size()[1], -1), 2, 3)
+        # [num_seq*seq_len, 1, max_word_len, char_emb_dim]
+        x = self.conv_layers(x)
+        # [num_seq*seq_len, total_num_filters]
+        x = self.batch_norm(x)
+        x = x.contiguous().view(gru_batch_size, gru_seq_len, -1)
         h0 = Variable(torch.rand(1, r_in.size(0), 64)).cuda()
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
         packed_h, packed_h_t = self.rnn(r_in, h0)
