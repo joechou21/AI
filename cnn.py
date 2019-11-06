@@ -76,6 +76,7 @@ def char2idx_array(sentence_list, timestep, char2idx, length=9):
 
 
 
+#x2 = char2idx_array(train, len_max, char2idx, 9)
 x2 = char2idx_array(train, len_max, char2idx, 9)
 #print(train[1])
 #for char in x2[1][2]:
@@ -123,8 +124,8 @@ class Combine(nn.Module):
         self.embedding_dim = 50
         self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
         self.convolutions = []
-        self.filter_num_width = [(25, 1), (50, 2), (75, 3), (100, 4), (125, 5), (150, 6)]
-        
+        #self.filter_num_width = [(25, 1), (50, 2), (75, 3), (100, 4), (125, 5), (150, 6)]
+        self.filter_num_width = [(25, 1), (50, 2)]
         for out_channel, filter_width in self.filter_num_width:
             self.convolutions.append(
                 nn.Conv2d(
@@ -134,11 +135,11 @@ class Combine(nn.Module):
                     bias=True
                     )
             )
-        self.input_dim = sum([x for x, y in self.filter_num_width])
-        self.batch_norm = nn.BatchNorm1d(self.input_dim, affine=False)
+        #self.input_dim = sum([x for x, y in self.filter_num_width])
+        #self.batch_norm = nn.BatchNorm1d(self.input_dim, affine=False)
         self.num_classes = 41
         self.rnn = nn.GRU(
-            input_size=525, 
+            input_size=75, 
             hidden_size=64, 
             num_layers=1,
             batch_first=True)
@@ -149,7 +150,7 @@ class Combine(nn.Module):
                 self.convolutions[x] = self.convolutions[x].cuda()
             self.rnn = self.rnn.cuda()
             self.embedding = self.embedding.cuda()
-            self.batch_norm = self.batch_norm.cuda()    
+            #self.batch_norm = self.batch_norm.cuda()    
     
     def conv_layers(self, x):
         chosen_list = list()
@@ -162,8 +163,11 @@ class Combine(nn.Module):
             # (batch_size, out_channel)
             chosen_list.append(chosen)
         return torch.cat(chosen_list, 1)
+    
 
-    def forward(self, x):
+    #def init_hidden(self):
+    #    return Variable(torch.zeros(1, 4, 64).cuda())
+    def forward(self, x, hidden):
 
         gru_batch_size = x.size()[0]
         gru_seq_len = x.size()[1]
@@ -181,19 +185,19 @@ class Combine(nn.Module):
         # [num_seq*seq_len, 1, max_word_len, char_emb_dim]
         x = self.conv_layers(x)
         # [num_seq*seq_len, total_num_filters]
-        x = self.batch_norm(x)
+        #x = self.batch_norm(x)
         #print(x)
         x = x.contiguous().view(gru_batch_size, gru_seq_len, -1)
         #print(x.shape)
-        h0 = Variable(torch.rand(1, x.size(0), 64)).cuda()
+        #h0 = Variable(torch.rand(1, x.size(0), 64)).cuda()
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
-        packed_h, packed_h_t = self.rnn(x, h0)
+        packed_h, packed_h_t = self.rnn(x, hidden)
         decoded = packed_h_t[-1]
         #r_out, (h_n, h_c) = self.rnn(r_in)
         #r_out2 = self.linear(r_out[:, -1, :])
         logit = self.fc(decoded)
         #return decoded
-        return F.log_softmax(logit, dim=1)
+        return F.log_softmax(logit, dim=1), hidden
 
 
 
@@ -202,7 +206,7 @@ class Combine(nn.Module):
 y = torch.LongTensor(np.asarray(test, dtype=np.float32))
 dataset = Data.TensorDataset(torch.LongTensor(x2), y)
 train_loader = torch.utils.data.DataLoader(dataset,
-                                           batch_size=8,
+                                           batch_size=4,
                                            shuffle=True)
 
 #model = Combine()
@@ -233,45 +237,14 @@ import torch.optim as optim
         #loss = F.nll_loss(output, target)
         #loss.backward()
         #optimizer.step()
+def repackage_hidden(h):
+    """Wraps hidden states in new Tensors, to detach them from their history."""
 
+    if isinstance(h, torch.Tensor):
+        return h.detach()
+    else:
+        return tuple(repackage_hidden(v) for v in h)
 
-class Highway(nn.Module):
-    def __init__(self, size, num_layers, f):
-
-        super(Highway, self).__init__()
-
-        self.num_layers = num_layers
-
-        self.nonlinear = nn.ModuleList([nn.Linear(size, size) for _ in range(num_layers)])
-
-        self.linear = nn.ModuleList([nn.Linear(size, size) for _ in range(num_layers)])
-
-        self.gate = nn.ModuleList([nn.Linear(size, size) for _ in range(num_layers)])
-
-        self.f = f
-
-        self.connect = nn.Linear(128, 41)
-    def forward(self, x):
-        """
-            :param x: tensor with shape of [batch_size, size]
-            :return: tensor with shape of [batch_size, size]
-            applies σ(x) ⨀ (f(G(x))) + (1 - σ(x)) ⨀ (Q(x)) transformation | G and Q is affine transformation,
-            f is non-linear transformation, σ(x) is affine transformation with sigmoid non-linearition
-            and ⨀ is element-wise multiplication
-            """
-
-        for layer in range(self.num_layers):
-            gate = F.sigmoid(self.gate[layer](x))
-
-            nonlinear = self.f(self.nonlinear[layer](x))
-            linear = self.linear[layer](x)
-
-            x = gate * nonlinear + (1 - gate) * linear
-        x = self.connect(x)
-        return F.log_softmax(x, dim=1)
-
-
- 
 model2 = Combine()
 #train(23)
 #sys.exit()
@@ -286,8 +259,7 @@ if torch.cuda.is_available():
 
 
 optimizer = optim.Adam(model2.parameters())
-
-
+ 
 #model.train()
 
 def train(model2, optimizer):
@@ -299,10 +271,12 @@ def train(model2, optimizer):
     #model1.train()
     model2.train()
     #model3.train()
+    hidden = Variable(torch.zeros(1, 4, 64).cuda())
     for epoch in range(1, 100):
         for batch_idx, (data2, target) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
-
+            if data2.size(0)!=4:
+                continue
             if torch.cuda.is_available():
                 target = Variable(target).cuda()
                 data2 = Variable(data2).cuda()
@@ -310,13 +284,22 @@ def train(model2, optimizer):
                 target = Variable(target)
                 data2 = Variable(data2)
 
-            #print(data.shape)
+            #print(data2.shape)
             #sys.exit()
-        
-            #optimizer.zero_grad()
-            #first = model1(data)
-            #print(first.shape)
-            logit = model2(data2)
+            #16 82 9
+
+            #train_set = np.array(text2vec(train_text, char_dict, max_word_len))
+            #num_seq = train_input.size()[0] // opt.lstm_seq_len
+            #train_input = train_input[:num_seq*opt.lstm_seq_len, :]
+            #train_input = train_input.view(-1, opt.lstm_seq_len, opt.max_word_len+2)
+            hidden = repackage_hidden(hidden)
+            optimizer.zero_grad()
+            #model2.zero_grad()
+            #hidden = model2().init_hidden()
+            #hidden = [state.detach() for state in hidden]
+            #print(hidden)
+            #print(type(hidden))
+            logit, hidden = model2(data2, hidden)
             #print(second.shape)
             #x = torch.cat((first, second), dim =1)
             #logit = model3(x)
