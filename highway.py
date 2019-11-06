@@ -222,7 +222,7 @@ class Combine(nn.Module):
             chosen_list.append(chosen)
         return torch.cat(chosen_list, 1)
 
-    def forward(self, x):
+    def forward(self, x, hidden):
 
         gru_batch_size = x.size()[0]
         gru_seq_len = x.size()[1]
@@ -245,9 +245,9 @@ class Combine(nn.Module):
         #print(x)
         x = x.contiguous().view(gru_batch_size, gru_seq_len, -1)
         #print(x.shape)
-        h0 = Variable(torch.rand(1, x.size(0), 64)).cuda()
+        #h0 = Variable(torch.rand(1, x.size(0), 64)).cuda()
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
-        packed_h, packed_h_t = self.rnn(x, h0)
+        packed_h, packed_h_t = self.rnn(x, hidden)
         decoded = packed_h_t[-1]
         #r_out, (h_n, h_c) = self.rnn(r_in)
         #r_out2 = self.linear(r_out[:, -1, :])
@@ -339,24 +339,26 @@ def train(model1, model2, model3, optimizer):
     model1.train()
     model2.train()
     model3.train()
+    hidden = Variable(torch.zeros(1, 4, 64).cuda())
     for epoch in range(1, 100):
         for batch_idx, (data, target, data2) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
-
+            if data2.size(0)!=4:
+                continue
             if torch.cuda.is_available():
                 data, target = Variable(data).cuda(), Variable(target).cuda()
                 data2 = Variable(data2).cuda()
             else:
                 data, target = Variable(data), Variable(target)
                 data2 = Variable(data2)
-
+            hidden = repackage_hidden(hidden)
             #print(data.shape)
             #sys.exit()
         
             optimizer.zero_grad()
             first = model1(data)
             #print(first.shape)
-            second = model2(data2)
+            second = model2(data2, hidden)
             #print(second.shape)
             x = torch.cat((first, second), dim =1)
             logit = model3(x)
