@@ -102,7 +102,7 @@ class RNN(nn.Module):
         # bidirection 
         self.num_layers *= 2
 
-    def forward(self, input_x, lens = None):
+    def forward(self, input_x, hidden):
         # Set initial states
         x = self.embed(input_x)  # dim: (batch_size, max_seq_len, embedding_size)
         #print(x.shape)
@@ -111,9 +111,9 @@ class RNN(nn.Module):
         #data, target, seq = data_helpers.sorting_sequence(data, target, seq, args)
         #packed_x = pack_padded_sequence(x, lengths = Variable(lens).cuda(), batch_first=True)
 
-        h0 = Variable(torch.rand(self.num_layers, x.size(0), self.hidden_size).cuda())
+        #h0 = Variable(torch.rand(self.num_layers, x.size(0), self.hidden_size).cuda())
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
-        packed_h, packed_h_t = self.rnn(x, h0)
+        packed_h, packed_h_t = self.rnn(x, hidden)
         decoded = packed_h_t[-1]
         # Decode hidden state of last time step
         #logit = self.fc(decoded)
@@ -208,8 +208,7 @@ class Combine(nn.Module):
                 self.convolutions[x] = self.convolutions[x].cuda()
             self.rnn = self.rnn.cuda()
             self.embedding = self.embedding.cuda()
-            self.batch_norm = self.batch_norm.cuda()    
-    
+        
     def conv_layers(self, x):
         chosen_list = list()
         for conv in self.convolutions:
@@ -249,8 +248,7 @@ class Combine(nn.Module):
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
         packed_h, packed_h_t = self.rnn(x, hidden)
         decoded = packed_h_t[-1]
-        #r_out, (h_n, h_c) = self.rnn(r_in)
-        #r_out2 = self.linear(r_out[:, -1, :])
+    
         #logit = self.fc(decoded)
         return decoded
         #return F.log_softmax(logit, dim=1)
@@ -269,9 +267,6 @@ train_loader = torch.utils.data.DataLoader(dataset,
                                            shuffle=True)
 
 import torch.optim as optim
-
-
-#optimizer = optim.Adam(model.parameters())
 
 class Highway(nn.Module):
     def __init__(self, size, num_layers, f):
@@ -325,8 +320,16 @@ if torch.cuda.is_available():
 
 
 
-optimizer = optim.Adam(model3.parameters())
+#optimizer = optim.Adam(model3.parameters())
+optimizer = optim.Adam(list(model1.parameters()) + list(model2.parameters())
+    + list(model3.parameters()))
+def repackage_hidden(h):
+    """Wraps hidden states in new Tensors, to detach them from their history."""
 
+    if isinstance(h, torch.Tensor):
+        return h.detach()
+    else:
+        return tuple(repackage_hidden(v) for v in h)
 
 #model.train()
 
@@ -336,14 +339,16 @@ def train(model1, model2, model3, optimizer):
     epoch_acc = 0
     
     iteration = 0    
-    model1.train()
-    model2.train()
+    #model1.train()
+    #model2.train()
     model3.train()
-    hidden = Variable(torch.zeros(1, 4, 64).cuda())
+    hidden = Variable(torch.zeros(1, 8, 64).cuda())
+    hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
+
     for epoch in range(1, 100):
         for batch_idx, (data, target, data2) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
-            if data2.size(0)!=4:
+            if data2.size(0)!=8:
                 continue
             if torch.cuda.is_available():
                 data, target = Variable(data).cuda(), Variable(target).cuda()
@@ -352,19 +357,18 @@ def train(model1, model2, model3, optimizer):
                 data, target = Variable(data), Variable(target)
                 data2 = Variable(data2)
             hidden = repackage_hidden(hidden)
+            hidden1 = repackage_hidden(hidden1)
             #print(data.shape)
             #sys.exit()
         
             optimizer.zero_grad()
-            first = model1(data)
+            logit1 = model1(data, hidden1)
             #print(first.shape)
-            second = model2(data2, hidden)
+            logit2 = model2(data2, hidden)
             #print(second.shape)
-            x = torch.cat((first, second), dim =1)
+            x = torch.cat((logit1, logit2), dim =1)
             logit = model3(x)
-            #loss = criterion(predictions, target)
-            #print(target)
-            #print(torch.max(target, 1)[1])
+            
             loss = F.nll_loss(logit, target)
             #print(loss)
     
