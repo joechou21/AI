@@ -5,6 +5,8 @@ import sys
 import torch.utils.data as Data
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.metrics import f1_score
 
 glove_file = "./"
 train_file = "./"
@@ -350,14 +352,23 @@ def save_checkpoint(model, state, filename):
     state['state_dict'] = model.state_dict()
     torch.save(state,filename)
 
+def fscore(y_pred, y_true):
 
+    m = MultiLabelBinarizer().fit([y_true])
 
-def eval(model1, model2, model3, epoch_train, batch_train, optimizer, args):
+    print(f1_score(m.transform([y_true]),
+         m.transform([y_pred]),
+         average='macro'))
+
+def eval(model1, model2, model3):
     
     model3.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
     predicates_all, target_all = [], []
-    for batch_idx, (data, target, data2) in enumerate(train_loader):
+    hidden = Variable(torch.zeros(1, 8, 64).cuda())
+    hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
+    
+    for batch_idx, (data, target, data2) in enumerate(val_loader):
             model3.zero_grad()
 
             size += len(target)
@@ -392,7 +403,7 @@ def eval(model1, model2, model3, epoch_train, batch_train, optimizer, args):
                                                                        accuracy,
                                                                        corrects, 
                                                                        size))
-    print_f_score(predicates_all, target_all)
+    fscore(predicates_all, target_all)
     print('\n')
     
     return avg_loss, accuracy
@@ -412,6 +423,7 @@ def train(model1, model2, model3, optimizer):
 
     best_acc = None
     for epoch in range(1, 100):
+        accuracy = 0
         for batch_idx, (data, target, data2) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
             if data2.size(0)!=8:
@@ -444,31 +456,31 @@ def train(model1, model2, model3, optimizer):
 
 
             iteration += 1
-
-            if args.iter % 100 == 0:
+            
+            if iteration % 100 == 0:
                 corrects_data = (torch.max(logit, 1)[1] == target).data
                 corrects = corrects_data.sum()
                 accuracy = 100.0 * corrects / len(target)
-                print("Batch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})".format(iteration,
-                                                                              loss.data[0],
-                                                                              accuracy,
-                                                                              corrects,
-                                                                              len(target)))
-            if args.iter % args.dev_interval == 0:
-                dev(model)
-
-            # validation
-            val_loss, val_acc = eval(model1, model2, model3, epoch, i_batch, optimizer)
-            # save best validation epoch model
-            if best_acc is None or val_acc > best_acc:
-                file_path = '%s/AI_best.pth.tar' % ("./")
-                print("\r=> found better validated model, saving to %s" % file_path)
+                #print("Batch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})".format(iteration,
+                #                                                              loss.data[0],
+                #                                                              accuracy,
+                #                                                              corrects,
+                #                                                              len(target)))
+        # validation
+        val_loss, val_acc = eval(model1, model2, model3)
+        # save best validation epoch model
+        if best_acc is None or val_acc > best_acc:
+            file_path = '%s/AI_best.pth.tar' % ("./")
+            print("\r=> found better validated model, saving to %s" % file_path)
+            print(accuracy)
+            print(val_acc)
+            print(epoch)
                 #save_checkpoint(model, 
                 #            {'epoch': epoch,
                 #            'optimizer' : optimizer.state_dict(), 
                 #            'best_acc': best_acc},
                 #            file_path)
-                best_acc = val_acc
+            best_acc = val_acc
     
 
 train(model1, model2, model3, optimizer)
