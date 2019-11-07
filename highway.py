@@ -322,8 +322,6 @@ class Highway(nn.Module):
 model1 = RNN()
 model2 = Combine()
 model3 = Highway(128, 1, f= torch.nn.functional.relu)
-#train(23)
-#sys.exit()
 
 
 if torch.cuda.is_available():
@@ -345,12 +343,65 @@ def repackage_hidden(h):
     else:
         return tuple(repackage_hidden(v) for v in h)
 
-#model.train()
+
+def save_checkpoint(model, state, filename):
+    model_is_cuda = next(model.parameters()).is_cuda
+    model = model.module if model_is_cuda else model
+    state['state_dict'] = model.state_dict()
+    torch.save(state,filename)
+
+
+
+def eval(model1, model2, model3, epoch_train, batch_train, optimizer, args):
+    
+    model3.eval()
+    corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
+    predicates_all, target_all = [], []
+    for batch_idx, (data, target, data2) in enumerate(train_loader):
+            model3.zero_grad()
+
+            size += len(target)
+            if data2.size(0)!=8:
+                continue
+            if torch.cuda.is_available():
+                data, target = Variable(data, volatile=True).cuda(), Variable(target).cuda()
+                data2 = Variable(data2, volatile=True).cuda()
+            else:
+                data, target = Variable(data, volatile=True), Variable(target)
+                data2 = Variable(data2, volatile=True)
+            hidden = repackage_hidden(hidden)
+            hidden1 = repackage_hidden(hidden1)
+    
+            logit1 = model1(data, hidden1)
+            #print(first.shape)
+            logit2 = model2(data2, hidden)
+            #print(second.shape)
+            x = torch.cat((logit1, logit2), dim =1)
+            logit = model3(x)
+            predicates = torch.max(logit, 1)[1].view(target.size()).data
+            accumulated_loss += F.nll_loss(logit, target, size_average = False).data
+            corrects += (torch.max(logit, 1)[1].view(target.size()).data == target.data).sum()
+            predicates_all += predicates.cpu().numpy().tolist()
+            target_all += target.data.cpu().numpy().tolist()
+    
+    avg_loss = accumulated_loss / size
+    accuracy = 100.0 * corrects / size
+    model3.train()
+    print('\nEvaluation - loss: {:.6f}  lr: {:.5f}  acc: {:.3f}% ({}/{}) '.format(avg_loss, 
+                                                                       optimizer.state_dict()['param_groups'][0]['lr'],
+                                                                       accuracy,
+                                                                       corrects, 
+                                                                       size))
+    print_f_score(predicates_all, target_all)
+    print('\n')
+    
+    return avg_loss, accuracy
+
+
+
+
 
 def train(model1, model2, model3, optimizer):
-    
-    epoch_loss = 0
-    epoch_acc = 0
     
     iteration = 0    
     #model1.train()
@@ -359,6 +410,7 @@ def train(model1, model2, model3, optimizer):
     hidden = Variable(torch.zeros(1, 8, 64).cuda())
     hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
 
+    best_acc = None
     for epoch in range(1, 100):
         for batch_idx, (data, target, data2) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
@@ -393,35 +445,31 @@ def train(model1, model2, model3, optimizer):
 
             iteration += 1
 
-            #if args.iter % args.log_interval == 0:
-            #print(torch.max(logit, 1)[1])
-            #print(torch.max(logit, 1)[1].shape)
-            #print(target)
-            corrects_data = (torch.max(logit, 1)[1] == target).data
-            #print(corrects_data)
-            corrects = corrects_data.sum()
-            #print(corrects)
-            accuracy = 100.0 * corrects / len(target)
-            print("Batch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})".format(iteration,
+            if args.iter % 100 == 0:
+                corrects_data = (torch.max(logit, 1)[1] == target).data
+                corrects = corrects_data.sum()
+                accuracy = 100.0 * corrects / len(target)
+                print("Batch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})".format(iteration,
                                                                               loss.data[0],
                                                                               accuracy,
                                                                               corrects,
                                                                               len(target)))
-            #if args.iter % args.dev_interval == 0:
-            #    dev(model)
+            if args.iter % args.dev_interval == 0:
+                dev(model)
 
-            #if args.iter % args.save_interval == 0:
-                #if not os.path.isdir(args.save_dir): os.makedirs(args.save_dir)
-                #torch.save(model, save_path)
-        
-            #epoch_loss += loss.item()
-            #print(epoch_loss)
-            #epoch_acc += acc.item()
-        
-        #return epoch_loss
-
-
-
+            # validation
+            val_loss, val_acc = eval(model1, model2, model3, epoch, i_batch, optimizer)
+            # save best validation epoch model
+            if best_acc is None or val_acc > best_acc:
+                file_path = '%s/AI_best.pth.tar' % ("./")
+                print("\r=> found better validated model, saving to %s" % file_path)
+                #save_checkpoint(model, 
+                #            {'epoch': epoch,
+                #            'optimizer' : optimizer.state_dict(), 
+                #            'best_acc': best_acc},
+                #            file_path)
+                best_acc = val_acc
+    
 
 train(model1, model2, model3, optimizer)
 
