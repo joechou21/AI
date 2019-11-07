@@ -141,7 +141,7 @@ idx2char[0] = ""
 for i, char in enumerate(unique):
     char2idx[char] = i+1
     idx2char[i+1] = char
-print(len(char2idx))
+#print(len(char2idx))
 
 
 def char2idx_array(sentence_list, timestep, char2idx, length=9):
@@ -257,14 +257,28 @@ class Combine(nn.Module):
 
 
 
-
-
-
 dataset = Data.TensorDataset(torch.LongTensor(x), y, torch.LongTensor(x2))
+print(len(dataset))
+train_size = int(0.6 * len(dataset))
+print(train_size)
+val_size = (len(dataset) - train_size)//2
+print(val_size)
+test_size = val_size+1
+print(test_size)
+train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 #dataset = Data.TensorDataset(torch.LongTensor(x2), y)
-train_loader = torch.utils.data.DataLoader(dataset,
+train_loader = torch.utils.data.DataLoader(train_dataset,
                                            batch_size=8,
                                            shuffle=True)
+
+val_loader = torch.utils.data.DataLoader(val_dataset,
+                                           batch_size=8,
+                                           shuffle=False)
+
+test_loader = torch.utils.data.DataLoader(test_dataset,
+                                           batch_size=8,
+                                           shuffle=False)
+
 
 import torch.optim as optim
 
