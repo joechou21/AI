@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import f1_score
-
+from sklearn.metrics import classification_report
 glove_file = "./"
 train_file = "./"
 word2idx = {} 
@@ -214,7 +214,7 @@ class Combine(nn.Module):
     def conv_layers(self, x):
         chosen_list = list()
         for conv in self.convolutions:
-            feature_map = F.tanh(conv(x))
+            feature_map = torch.tanh(conv(x))
             # (batch_size, out_channel, 1, max_word_len-width+1)
             chosen = torch.max(feature_map, 3)[0]
             # (batch_size, out_channel, 1)            
@@ -310,7 +310,7 @@ class Highway(nn.Module):
             """
 
         for layer in range(self.num_layers):
-            gate = F.sigmoid(self.gate[layer](x))
+            gate = torch.sigmoid(self.gate[layer](x))
 
             nonlinear = self.f(self.nonlinear[layer](x))
             linear = self.linear[layer](x)
@@ -337,6 +337,7 @@ if torch.cuda.is_available():
 #optimizer = optim.Adam(model3.parameters())
 optimizer = optim.Adam(list(model1.parameters()) + list(model2.parameters())
     + list(model3.parameters()))
+
 def repackage_hidden(h):
     """Wraps hidden states in new Tensors, to detach them from their history."""
 
@@ -354,12 +355,12 @@ def save_checkpoint(model, state, filename):
 
 def fscore(y_pred, y_true):
 
-    m = MultiLabelBinarizer().fit([y_true])
-
-    print(f1_score(m.transform([y_true]),
-         m.transform([y_pred]),
-         average='macro'))
-
+    #m = MultiLabelBinarizer().fit([y_true])
+    #y_true = m.transform([y_true])
+    #y_pred = m.transform(y_pred)
+    print(f1_score(y_true, y_pred, average='macro'))  
+    #print(classification_report(y_true, y_pred))
+    #sys.exit()
 def eval(model1, model2, model3):
     
     model3.eval()
@@ -367,19 +368,19 @@ def eval(model1, model2, model3):
     predicates_all, target_all = [], []
     hidden = Variable(torch.zeros(1, 8, 64).cuda())
     hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
-    
-    for batch_idx, (data, target, data2) in enumerate(val_loader):
+    with torch.no_grad():
+        for batch_idx, (data, target, data2) in enumerate(val_loader):
             model3.zero_grad()
 
             size += len(target)
             if data2.size(0)!=8:
                 continue
             if torch.cuda.is_available():
-                data, target = Variable(data, volatile=True).cuda(), Variable(target).cuda()
-                data2 = Variable(data2, volatile=True).cuda()
+                data, target = Variable(data).cuda(), Variable(target).cuda()
+                data2 = Variable(data2).cuda()
             else:
-                data, target = Variable(data, volatile=True), Variable(target)
-                data2 = Variable(data2, volatile=True)
+                data, target = Variable(data), Variable(target)
+                data2 = Variable(data2)
             hidden = repackage_hidden(hidden)
             hidden1 = repackage_hidden(hidden1)
     
@@ -448,10 +449,12 @@ def train(model1, model2, model3, optimizer):
             logit = model3(x)
             
             loss = F.nll_loss(logit, target)
+            #
             #print(loss)
     
             loss.backward()
-        
+            torch.nn.utils.clip_grad_norm_(list(model1.parameters()) + list(model2.parameters())
+                + list(model3.parameters()), 0.5)        
             optimizer.step()
 
 
