@@ -321,20 +321,20 @@ class Highway(nn.Module):
 
 
  
-#model1 = RNN()
-model2 = Combine()
+model1 = RNN()
+#model2 = Combine()
 #model3 = Highway(128, 1, f= torch.nn.functional.relu)
 
 
 if torch.cuda.is_available():
-    #model1.cuda()
-    model2.cuda()
+    model1.cuda()
+    #model2.cuda()
     #model3.cuda()
     print("model will use GPU")
 
 
 
-optimizer = optim.Adam(model2.parameters())
+optimizer = optim.Adam(model1.parameters())
 #optimizer = optim.Adam(list(model1.parameters()) + list(model2.parameters())
 #    + list(model3.parameters()))
 
@@ -361,16 +361,16 @@ def fscore(y_pred, y_true):
     print(f1_score(y_true, y_pred, average='macro'))  
     #print(classification_report(y_true, y_pred))
     #sys.exit()
-def eval(model2):
+def eval(model1):
     
-    model2.eval()
+    model1.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
     predicates_all, target_all = [], []
     hidden = Variable(torch.zeros(1, 8, 64).cuda())
-    #hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
+    hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
     with torch.no_grad():
         for batch_idx, (data, target, data2) in enumerate(val_loader):
-            model2.zero_grad()
+            model1.zero_grad()
 
             size += len(target)
             if data2.size(0)!=8:
@@ -381,12 +381,12 @@ def eval(model2):
             else:
                 data, target = Variable(data), Variable(target)
                 data2 = Variable(data2)
-            hidden = repackage_hidden(hidden)
-            #hidden1 = repackage_hidden(hidden1)
+            #hidden = repackage_hidden(hidden)
+            hidden1 = repackage_hidden(hidden1)
     
-            #logit = model1(data, hidden1)
+            logit = model1(data, hidden1)
             #print(first.shape)
-            logit = model2(data2, hidden)
+            #logit2 = model2(data2, hidden)
             #print(second.shape)
             #x = torch.cat((logit1, logit2), dim =1)
             #logit = model3(x)
@@ -398,7 +398,7 @@ def eval(model2):
     
     avg_loss = accumulated_loss / size
     accuracy = 100.0 * corrects / size
-    model2.train()
+    model1.train()
     print('\nEvaluation - loss: {:.6f}  lr: {:.5f}  acc: {:.3f}% ({}/{}) '.format(avg_loss, 
                                                                        optimizer.state_dict()['param_groups'][0]['lr'],
                                                                        accuracy,
@@ -413,12 +413,12 @@ def eval(model2):
 
 
 
-def train(model2, optimizer):
+def train(model1, optimizer):
     
     iteration = 0    
-    model2.train()
-    hidden = Variable(torch.zeros(1, 8, 64).cuda())
-    #hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
+    model1.train()
+    #hidden = Variable(torch.zeros(1, 8, 64).cuda())
+    hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
 
     best_acc = None
     for epoch in range(1, 100):
@@ -433,15 +433,15 @@ def train(model2, optimizer):
             else:
                 data, target = Variable(data), Variable(target)
                 data2 = Variable(data2)
-            hidden = repackage_hidden(hidden)
-            #hidden1 = repackage_hidden(hidden1)
+            #hidden = repackage_hidden(hidden)
+            hidden1 = repackage_hidden(hidden1)
             #print(data.shape)
             #sys.exit()
         
             optimizer.zero_grad()
-            #logit = model1(data, hidden1)
+            logit = model1(data, hidden1)
             #print(first.shape)
-            logit = model2(data2, hidden)
+            #logit2 = model2(data2, hidden)
             #print(second.shape)
             #x = torch.cat((logit1, logit2), dim =1)
             #logit = model3(x)
@@ -453,7 +453,7 @@ def train(model2, optimizer):
             loss.backward()
             #torch.nn.utils.clip_grad_norm_(list(model1.parameters()) + list(model2.parameters())
             #    + list(model3.parameters()), 0.5)    
-            torch.nn.utils.clip_grad_norm_(model2.parameters(), 0.5)        
+            torch.nn.utils.clip_grad_norm_(model1.parameters(), 0.5)        
             optimizer.step()
 
 
@@ -469,7 +469,7 @@ def train(model2, optimizer):
                 #                                                              corrects,
                 #                                                              len(target)))
         # validation
-        val_loss, val_acc = eval(model2)
+        val_loss, val_acc = eval(model1)
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")
@@ -485,7 +485,7 @@ def train(model2, optimizer):
             best_acc = val_acc
     
 
-train(model2, optimizer)
+train(model1, optimizer)
 
 
 
