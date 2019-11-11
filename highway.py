@@ -348,6 +348,7 @@ def repackage_hidden(h):
 
 
 def save_checkpoint(model, state, filename):
+
     model_is_cuda = next(model.parameters()).is_cuda
     model = model.module if model_is_cuda else model
     state['state_dict'] = model.state_dict()
@@ -358,6 +359,7 @@ def fscore(y_pred, y_true):
     #m = MultiLabelBinarizer().fit([y_true])
     #y_true = m.transform([y_true])
     #y_pred = m.transform(y_pred)
+    print(f1_score(y_true, y_pred, average='micro'))
     print(f1_score(y_true, y_pred, average='macro'))  
     #print(classification_report(y_true, y_pred))
     #sys.exit()
@@ -453,8 +455,8 @@ def train(model1, model2, model3, optimizer):
             #print(loss)
     
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(list(model1.parameters()) + list(model2.parameters())
-                + list(model3.parameters()), 0.5)        
+            #torch.nn.utils.clip_grad_norm_(list(model1.parameters()) + list(model2.parameters())
+            #    + list(model3.parameters()), 0.5)        
             optimizer.step()
 
 
