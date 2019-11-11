@@ -177,10 +177,9 @@ def char2idx_array(sentence_list, timestep, char2idx, length=9):
 x2 = char2idx_array(train, len_max, char2idx, 9)
 
 class Combine(nn.Module):
-    def __init__(self, modelA):
+    def __init__(self):
         super(Combine, self).__init__()
-        #self.cnn = CNN()
-        self.modelA = modelA
+        self.modelA = RNN()
         self.vocab_size = 83
         self.embedding_dim = 50
         self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
@@ -228,7 +227,7 @@ class Combine(nn.Module):
         return torch.cat(chosen_list, 1)
 
     def forward(self, x, x1, hidden, hidden1):
-        x1 = self.modelA(x, hidden)
+        x1 = self.modelA(x1, hidden1)
         gru_batch_size = x.size()[0]
         gru_seq_len = x.size()[1]
         x = x.contiguous().view(-1, x.size()[2])
@@ -254,12 +253,8 @@ class Combine(nn.Module):
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
         packed_h, packed_h_t = self.rnn(x, hidden)
         x2 = packed_h_t[-1]
-
-     `  input_highway = torch.cat((x1, x2), dim =1)
-        print(input_highway)
+        input_highway = torch.cat((x1, x2), dim =1)
         result = self.highway(input_highway)
-        print(input_highway)
-        sys.exit()
         logit = self.fc(result)
         #return decoded
         return F.log_softmax(logit, dim=1)
@@ -303,13 +298,11 @@ class Highway(nn.Module):
         self.fc2 = nn.Linear(input_size, input_size, bias=True)
 
     def forward(self, x):
-        t = F.sigmoid(self.fc1(x))
+        t = torch.sigmoid(self.fc1(x))
         return torch.mul(t, F.relu(self.fc2(x))) + torch.mul(1-t, x)        
 
 
- 
-model1 = RNN()
-model2 = Combine(model1)
+model2 = Combine()
 #model3 = Highway(128, 1, f= torch.nn.functional.relu)
 
 
