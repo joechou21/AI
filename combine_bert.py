@@ -8,12 +8,14 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import f1_score
 from sklearn.metrics import classification_report
+from pytorch_pretrained_bert import BertTokenizer, BertModel
 glove_file = "./"
 train_file = "./" 
 vectors = []
 test = []
 train = []
 #with open("./KBP-SF48-master/train_sf.txt", "rb") as f:  
+len_max = 0
 with open(train_file+"/train_sf.txt", "rb") as f:
     for l in f:
         line = l.decode().split("\t")
@@ -23,9 +25,7 @@ with open(train_file+"/train_sf.txt", "rb") as f:
         train.append(line[1])
         test.append(line[0])
 
-
 batch_size = 8
-
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 X_train = [tokenizer.tokenize('[CLS] ' + sent + ' [SEP]') for sent in train] # Appending [CLS] and [SEP] tokens - this probably can be done in a cleaner way
@@ -33,14 +33,26 @@ bert_model = BertModel.from_pretrained('bert-base-uncased')
 bert_model = bert_model.cuda()
 
 X_train_tokens = [tokenizer.convert_tokens_to_ids(sent) for sent in X_train]
-results = torch.zeros((len(X_test_tokens), bert_model.config.hidden_size)).long()
+
+
+for i, x in enumerate(X_train_tokens):
+    #if len(x) > len_max:
+    #    len_max = len(x)
+    # 117 is the longest len of x in X_train_tokens
+    cnt = 117- len(x)
+    while cnt > 0:
+        x.append(0)
+        X_train_tokens[i]= x
+        cnt-=1
+print(bert_model.config.hidden_size)
+x = torch.zeros((len(X_train_tokens), bert_model.config.hidden_size)).long()
 with torch.no_grad():
-    for stidx in range(0, len(X_test_tokens), batch_size):
-        X = X_test_tokens[stidx:stidx + batch_size]
+    for stidx in range(0, len(X_train_tokens), batch_size):
+        X = X_train_tokens[stidx:stidx + batch_size]
         X = torch.LongTensor(X).cuda()
         _, pooled_output = bert_model(X)
-        results[stidx:stidx + batch_size,:] = pooled_output.cpu()
-
+        x[stidx:stidx + batch_size,:] = pooled_output.cpu()
+print(x.shape)
 y = torch.LongTensor(np.asarray(test, dtype=np.float32))
 
 class RNN(nn.Module):
@@ -49,17 +61,16 @@ class RNN(nn.Module):
         self.hidden_size = 64
         self.num_layers = 1
         self.num_classes = 41
+        self.embedding_dim = 9
         self.rnn = nn.GRU(self.embedding_dim, self.hidden_size, self.num_layers, batch_first=True,
                               bidirectional= True)
-        self.fc = nn.Linear(self.hidden_size, self.num_classes) 
+        #self.fc = nn.Linear(self.hidden_size, self.num_classes) 
         # bidirection 
         self.num_layers *= 2
 
     def forward(self, input_x, hidden):
         # Set initial states
         #x = self.embed(input_x)  # dim: (batch_size, max_seq_len, embedding_size
-        print(input_x)
-        sys.exit()
         packed_h, packed_h_t = self.rnn(input_x, hidden)
         decoded = packed_h_t[-1]
         # Decode hidden state of last time step
@@ -160,6 +171,8 @@ class Combine(nn.Module):
             self.rnn = self.rnn.cuda()
             self.embedding = self.embedding.cuda()
             self.highway = self.highway.cuda()
+            self.modelA = self.modelA.cuda()
+
     def conv_layers(self, x):
         chosen_list = list()
         for conv in self.convolutions:
@@ -199,12 +212,8 @@ class Combine(nn.Module):
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
         packed_h, packed_h_t = self.rnn(x, hidden)
         x2 = packed_h_t[-1]
-
-     `  input_highway = torch.cat((x1, x2), dim =1)
-        print(input_highway)
+        input_highway = torch.cat((x1, x2), dim =1)
         result = self.highway(input_highway)
-        print(input_highway)
-        sys.exit()
         logit = self.fc(result)
         #return decoded
         return F.log_softmax(logit, dim=1)
@@ -213,7 +222,7 @@ class Combine(nn.Module):
 
 
 
-dataset = Data.TensorDataset(torch.LongTensor(x), y, torch.LongTensor(x2))
+dataset = Data.TensorDataset(x, y, torch.LongTensor(x2))
 print(len(dataset))
 train_size = int(0.6 * len(dataset))
 print(train_size)
@@ -291,11 +300,13 @@ def fscore(y_pred, y_true):
     #m = MultiLabelBinarizer().fit([y_true])
     #y_true = m.transform([y_true])
     #y_pred = m.transform(y_pred)
-    print(f1_score(y_true, y_pred, average='micro'))
-    print(f1_score(y_true, y_pred, average='macro'))  
+    micro = f1_score(y_true, y_pred, average='micro')
+    macro = f1_score(y_true, y_pred, average='macro') 
+    print(micro)
+    print(macro)  
     #print(classification_report(y_true, y_pred))
     #sys.exit()
-def eval(model2):
+def eval(model2, file):
     
     model2.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
@@ -333,7 +344,8 @@ def eval(model2):
                                                                        accuracy,
                                                                        corrects, 
                                                                        size))
-    fscore(predicates_all, target_all)
+    micro, macro = fscore(predicates_all, target_all)
+    file.write(micro+" "+macro)
     print('\n')
     
     return avg_loss, accuracy
@@ -352,6 +364,7 @@ def train(model2, optimizer):
     hidden = Variable(torch.zeros(2, 8, 64).cuda())
 
     best_acc = None
+    file = open("./combine_bert.txt","a") 
     for epoch in range(1, 100):
         accuracy = 0
         for batch_idx, (data, target, data2) in enumerate(train_loader):
@@ -397,7 +410,8 @@ def train(model2, optimizer):
                 #                                                              corrects,
                 #                                                              len(target)))
         # validation
-        val_loss, val_acc = eval(model2)
+        val_loss, val_acc = eval(model2, file)
+        file.write("\t"+val_loss+"\t"+val_acc+"\t"+epoch+"\n")
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")
