@@ -5,7 +5,7 @@ import sys
 import torch.utils.data as Data
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from sklearn.preprocessing import MultiLabelBinarizer
+#from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import f1_score
 from sklearn.metrics import classification_report
 glove_file = "./"
@@ -274,15 +274,15 @@ print(test_size)
 train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 #dataset = Data.TensorDataset(torch.LongTensor(x2), y)
 train_loader = torch.utils.data.DataLoader(train_dataset,
-                                           batch_size=8,
+                                           batch_size=4,
                                            shuffle=True)
 
 val_loader = torch.utils.data.DataLoader(val_dataset,
-                                           batch_size=8,
+                                           batch_size=4,
                                            shuffle=False)
 
 test_loader = torch.utils.data.DataLoader(test_dataset,
-                                           batch_size=8,
+                                           batch_size=4,
                                            shuffle=False)
 
 
@@ -339,8 +339,14 @@ def fscore(y_pred, y_true):
     #m = MultiLabelBinarizer().fit([y_true])
     #y_true = m.transform([y_true])
     #y_pred = m.transform(y_pred)
-    print(f1_score(y_true, y_pred, average='micro'))
-    print(f1_score(y_true, y_pred, average='macro'))  
+    #print(f1_score(y_true, y_pred, average='micro'))
+    #print(f1_score(y_true, y_pred, average='macro'))  
+    micro = f1_score(y_true, y_pred, average='micro')
+    macro = f1_score(y_true, y_pred, average='macro') 
+    print(micro)
+    print(macro)  
+    
+    return micro, macro
     #print(classification_report(y_true, y_pred))
     #sys.exit()
 def eval(model2):
@@ -348,14 +354,14 @@ def eval(model2):
     model2.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
     predicates_all, target_all = [], []
-    hidden2 = Variable(torch.zeros(1, 8, 64).cuda())
-    hidden = Variable(torch.zeros(2, 8, 64).cuda())
+    hidden2 = Variable(torch.zeros(1, 4, 64).cuda())
+    hidden = Variable(torch.zeros(2, 4, 64).cuda())
     with torch.no_grad():
         for batch_idx, (data, target, data2) in enumerate(val_loader):
             model2.zero_grad()
 
             size += len(target)
-            if data2.size(0)!=8:
+            if data2.size(0)!=4:
                 continue
             if torch.cuda.is_available():
                 data, target = Variable(data).cuda(), Variable(target).cuda()
@@ -365,7 +371,7 @@ def eval(model2):
                 data2 = Variable(data2)
             hidden2 = repackage_hidden(hidden2)
             hidden = repackage_hidden(hidden)
-            logit1 = model2(data2, data, hidden2, hidden)
+            logit = model2(data2, data, hidden2, hidden)
          
             predicates = torch.max(logit, 1)[1].view(target.size()).data
             accumulated_loss += F.nll_loss(logit, target, size_average = False).data
@@ -381,7 +387,9 @@ def eval(model2):
                                                                        accuracy,
                                                                        corrects, 
                                                                        size))
-    fscore(predicates_all, target_all)
+    micro, macro = fscore(predicates_all, target_all)
+    file.write(micro+"\t"+macro)
+   
     print('\n')
     
     return avg_loss, accuracy
@@ -396,15 +404,16 @@ def train(model2, optimizer):
     #model1.train()
     #model2.train()
     model2.train()
-    hidden2 = Variable(torch.zeros(1, 8, 64).cuda())
-    hidden = Variable(torch.zeros(2, 8, 64).cuda())
+    hidden2 = Variable(torch.zeros(1, 4, 64).cuda())
+    hidden = Variable(torch.zeros(2, 4, 64).cuda())
 
     best_acc = None
+    file = open("./combine.txt","a") 
     for epoch in range(1, 100):
         accuracy = 0
         for batch_idx, (data, target, data2) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
-            if data2.size(0)!=8:
+            if data2.size(0)!=4:
                 continue
             if torch.cuda.is_available():
                 data, target = Variable(data).cuda(), Variable(target).cuda()
@@ -446,6 +455,7 @@ def train(model2, optimizer):
                 #                                                              len(target)))
         # validation
         val_loss, val_acc = eval(model2)
+        file.write("\t"+val_loss+"\t"+val_acc+"\t"+epoch+"\n")
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")
