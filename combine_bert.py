@@ -9,22 +9,10 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import f1_score
 from sklearn.metrics import classification_report
 glove_file = "./"
-train_file = "./"
-word2idx = {} 
+train_file = "./" 
 vectors = []
-
-with open(glove_file+"/glove.6B.50d.txt", "rb") as f:
-    index = 1
-    for l in f:
-        line = l.decode().split()
-        vect = np.array(line[1:]).astype(np.float)
-        vectors.append(vect)
-        word2idx[line[0]] = index
-        index+=1
-
 test = []
 train = []
-len_max = 0
 #with open("./KBP-SF48-master/train_sf.txt", "rb") as f:  
 with open(train_file+"/train_sf.txt", "rb") as f:
     for l in f:
