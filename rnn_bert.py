@@ -44,15 +44,16 @@ for i, x in enumerate(X_train_tokens):
         x.append(0)
         X_train_tokens[i]= x
         cnt-=1
-print(bert_model.config.hidden_size)
-x = torch.zeros((len(X_train_tokens), bert_model.config.hidden_size)).long()
+
+embedding = torch.zeros((len(X_train_tokens), bert_model.config.hidden_size)).long()
 with torch.no_grad():
     for stidx in range(0, len(X_train_tokens), batch_size):
         X = X_train_tokens[stidx:stidx + batch_size]
         X = torch.LongTensor(X).cuda()
         _, pooled_output = bert_model(X)
-        x[stidx:stidx + batch_size,:] = pooled_output.cpu()
-print(x.shape)
+        embedding[stidx:stidx + batch_size,:] = pooled_output.cpu()
+
+n, d = embedding.shape
 y = torch.LongTensor(np.asarray(test, dtype=np.float32))
 
 class RNN(nn.Module):
@@ -61,22 +62,26 @@ class RNN(nn.Module):
         self.hidden_size = 64
         self.num_layers = 1
         self.num_classes = 41
-        self.embedding_dim = 9
+        self.embedding_dim = d
+        self.embedding_num = n
+        self.embed = nn.Embedding(self.embedding_num, self.embedding_dim)
+        self.embed.load_state_dict({'weight': embedding})
         self.rnn = nn.GRU(self.embedding_dim, self.hidden_size, self.num_layers, batch_first=True,
                               bidirectional= True)
-        #self.fc = nn.Linear(self.hidden_size, self.num_classes) 
+        self.fc = nn.Linear(self.hidden_size, self.num_classes) 
         # bidirection 
         self.num_layers *= 2
 
     def forward(self, input_x, hidden):
         # Set initial states
-        #x = self.embed(input_x)  # dim: (batch_size, max_seq_len, embedding_size
-        packed_h, packed_h_t = self.rnn(input_x, hidden)
+        x = self.embed(input_x)  # dim: (batch_size, max_seq_len, embedding_size
+        #print(input_x.shape)
+        packed_h, packed_h_t = self.rnn(x, hidden)
         decoded = packed_h_t[-1]
         # Decode hidden state of last time step
-        #logit = self.fc(decoded)
-        #return F.log_softmax(logit, dim =1)
-        return decoded
+        logit = self.fc(decoded)
+        return F.log_softmax(logit, dim =1)
+        #return decoded
 
 
 unique = set()
@@ -133,10 +138,10 @@ def char2idx_array(sentence_list, timestep, char2idx, length=9):
 x2 = char2idx_array(train, len_max, char2idx, 9)
 
 class Combine(nn.Module):
-    def __init__(self, modelA):
+    def __init__(self):
         super(Combine, self).__init__()
         #self.cnn = CNN()
-        self.modelA = modelA
+        self.modelA = RNN()
         self.vocab_size = 83
         self.embedding_dim = 50
         self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
@@ -186,7 +191,7 @@ class Combine(nn.Module):
         return torch.cat(chosen_list, 1)
 
     def forward(self, x, x1, hidden, hidden1):
-        x1 = self.modelA(x, hidden)
+        x1 = self.modelA(x1, hidden1)
         gru_batch_size = x.size()[0]
         gru_seq_len = x.size()[1]
         x = x.contiguous().view(-1, x.size()[2])
@@ -222,7 +227,7 @@ class Combine(nn.Module):
 
 
 
-dataset = Data.TensorDataset(x, y, torch.LongTensor(x2))
+dataset = Data.TensorDataset(torch.LongTensor(X_train_tokens), y, torch.LongTensor(x2))
 print(len(dataset))
 train_size = int(0.6 * len(dataset))
 print(train_size)
@@ -257,25 +262,23 @@ class Highway(nn.Module):
         self.fc2 = nn.Linear(input_size, input_size, bias=True)
 
     def forward(self, x):
-        t = F.sigmoid(self.fc1(x))
+        t = torch.sigmoid(self.fc1(x))
         return torch.mul(t, F.relu(self.fc2(x))) + torch.mul(1-t, x)        
 
-
- 
-model1 = RNN()
-model2 = Combine(model1)
+mode1 = RNN()
+#model2 = Combine()
 #model3 = Highway(128, 1, f= torch.nn.functional.relu)
 
 
 if torch.cuda.is_available():
-    #model1.cuda()
-    model2.cuda()
+    model1.cuda()
+    #model2.cuda()
     #model3.cuda()
     print("model will use GPU")
 
 
 
-optimizer = optim.Adam(model2.parameters())
+optimizer = optim.Adam(model1.parameters())
 #optimizer = optim.Adam(list(model1.parameters()) + list(model2.parameters())
 #    + list(model3.parameters()))
 
@@ -303,7 +306,9 @@ def fscore(y_pred, y_true):
     micro = f1_score(y_true, y_pred, average='micro')
     macro = f1_score(y_true, y_pred, average='macro') 
     print(micro)
-    print(macro)  
+    print(macro)
+
+    return micro, macro  
     #print(classification_report(y_true, y_pred))
     #sys.exit()
 def eval(model2, file):
@@ -311,7 +316,7 @@ def eval(model2, file):
     model2.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
     predicates_all, target_all = [], []
-    hidden2 = Variable(torch.zeros(1, 8, 64).cuda())
+    #hidden2 = Variable(torch.zeros(1, 8, 64).cuda())
     hidden = Variable(torch.zeros(2, 8, 64).cuda())
     with torch.no_grad():
         for batch_idx, (data, target, data2) in enumerate(val_loader):
@@ -326,9 +331,10 @@ def eval(model2, file):
             else:
                 data, target = Variable(data), Variable(target)
                 data2 = Variable(data2)
-            hidden2 = repackage_hidden(hidden2)
+            #hidden2 = repackage_hidden(hidden2)
             hidden = repackage_hidden(hidden)
-            logit1 = model2(data2, data, hidden2, hidden)
+            #logit = model2(data2, data, hidden2, hidden)
+            logit = model2(data, hidden)
          
             predicates = torch.max(logit, 1)[1].view(target.size()).data
             accumulated_loss += F.nll_loss(logit, target, size_average = False).data
@@ -345,7 +351,7 @@ def eval(model2, file):
                                                                        corrects, 
                                                                        size))
     micro, macro = fscore(predicates_all, target_all)
-    file.write(micro+" "+macro)
+    file.write(str(micro)+" "+str(macro))
     print('\n')
     
     return avg_loss, accuracy
@@ -360,12 +366,13 @@ def train(model2, optimizer):
     #model1.train()
     #model2.train()
     model2.train()
-    hidden2 = Variable(torch.zeros(1, 8, 64).cuda())
+    #hidden2 = Variable(torch.zeros(1, 8, 64).cuda())
     hidden = Variable(torch.zeros(2, 8, 64).cuda())
 
     best_acc = None
-    file = open("./combine_bert.txt","a") 
+     
     for epoch in range(1, 100):
+        file = open("./rnn_bert.txt","a")
         accuracy = 0
         for batch_idx, (data, target, data2) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
@@ -377,13 +384,13 @@ def train(model2, optimizer):
             else:
                 data, target = Variable(data), Variable(target)
                 data2 = Variable(data2)
-            hidden2 = repackage_hidden(hidden2)
+            #hidden2 = repackage_hidden(hidden2)
             hidden = repackage_hidden(hidden)
             #print(data.shape)
             #sys.exit()
         
             optimizer.zero_grad()
-            logit = model2(data2, data, hidden2, hidden)
+            logit = model2(data, hidden)
             #print(second.shape)
             #x = torch.cat((logit1, logit2), dim =1)
             #logit = model3(x)
@@ -410,15 +417,17 @@ def train(model2, optimizer):
                 #                                                              corrects,
                 #                                                              len(target)))
         # validation
+        print(epoch)
         val_loss, val_acc = eval(model2, file)
-        file.write("\t"+val_loss+"\t"+val_acc+"\t"+epoch+"\n")
+        file.write("\t"+str(val_loss.item())+"\t"+str(val_acc.item())+"\t"+str(epoch)+"\n")
+        file.close()
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")
             print("\r=> found better validated model, saving to %s" % file_path)
             print(accuracy)
             print(val_acc)
-            print(epoch)
+           
                 #save_checkpoint(model, 
                 #            {'epoch': epoch,
                 #            'optimizer' : optimizer.state_dict(), 
@@ -427,7 +436,7 @@ def train(model2, optimizer):
             best_acc = val_acc
     
 
-train(model2, optimizer)
+train(model1, optimizer)
 
 
 
