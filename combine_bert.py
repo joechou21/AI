@@ -44,7 +44,7 @@ for i, x in enumerate(X_train_tokens):
         x.append(0)
         X_train_tokens[i]= x
         cnt-=1
-print(bert_model.config.hidden_size)
+
 x = torch.zeros((len(X_train_tokens), bert_model.config.hidden_size)).long()
 with torch.no_grad():
     for stidx in range(0, len(X_train_tokens), batch_size):
@@ -52,7 +52,7 @@ with torch.no_grad():
         X = torch.LongTensor(X).cuda()
         _, pooled_output = bert_model(X)
         x[stidx:stidx + batch_size,:] = pooled_output.cpu()
-print(x.shape)
+
 y = torch.LongTensor(np.asarray(test, dtype=np.float32))
 
 class RNN(nn.Module):
@@ -61,7 +61,7 @@ class RNN(nn.Module):
         self.hidden_size = 64
         self.num_layers = 1
         self.num_classes = 41
-        self.embedding_dim = 9
+        self.embedding_dim = 50
         self.rnn = nn.GRU(self.embedding_dim, self.hidden_size, self.num_layers, batch_first=True,
                               bidirectional= True)
         #self.fc = nn.Linear(self.hidden_size, self.num_classes) 
@@ -71,6 +71,7 @@ class RNN(nn.Module):
     def forward(self, input_x, hidden):
         # Set initial states
         #x = self.embed(input_x)  # dim: (batch_size, max_seq_len, embedding_size
+        print(input_x.shape)
         packed_h, packed_h_t = self.rnn(input_x, hidden)
         decoded = packed_h_t[-1]
         # Decode hidden state of last time step
@@ -133,10 +134,10 @@ def char2idx_array(sentence_list, timestep, char2idx, length=9):
 x2 = char2idx_array(train, len_max, char2idx, 9)
 
 class Combine(nn.Module):
-    def __init__(self, modelA):
+    def __init__(self):
         super(Combine, self).__init__()
         #self.cnn = CNN()
-        self.modelA = modelA
+        self.modelA = RNN()
         self.vocab_size = 83
         self.embedding_dim = 50
         self.embedding = nn.Embedding(self.vocab_size, self.embedding_dim)
@@ -186,7 +187,7 @@ class Combine(nn.Module):
         return torch.cat(chosen_list, 1)
 
     def forward(self, x, x1, hidden, hidden1):
-        x1 = self.modelA(x, hidden)
+        x1 = self.modelA(x1, hidden1)
         gru_batch_size = x.size()[0]
         gru_seq_len = x.size()[1]
         x = x.contiguous().view(-1, x.size()[2])
@@ -261,9 +262,7 @@ class Highway(nn.Module):
         return torch.mul(t, F.relu(self.fc2(x))) + torch.mul(1-t, x)        
 
 
- 
-model1 = RNN()
-model2 = Combine(model1)
+model2 = Combine()
 #model3 = Highway(128, 1, f= torch.nn.functional.relu)
 
 
@@ -303,7 +302,9 @@ def fscore(y_pred, y_true):
     micro = f1_score(y_true, y_pred, average='micro')
     macro = f1_score(y_true, y_pred, average='macro') 
     print(micro)
-    print(macro)  
+    print(macro)
+
+    return micro, macro  
     #print(classification_report(y_true, y_pred))
     #sys.exit()
 def eval(model2, file):
@@ -328,7 +329,7 @@ def eval(model2, file):
                 data2 = Variable(data2)
             hidden2 = repackage_hidden(hidden2)
             hidden = repackage_hidden(hidden)
-            logit1 = model2(data2, data, hidden2, hidden)
+            logit = model2(data2, data, hidden2, hidden)
          
             predicates = torch.max(logit, 1)[1].view(target.size()).data
             accumulated_loss += F.nll_loss(logit, target, size_average = False).data

@@ -358,10 +358,14 @@ def fscore(y_pred, y_true):
     #m = MultiLabelBinarizer().fit([y_true])
     #y_true = m.transform([y_true])
     #y_pred = m.transform(y_pred)
-    print(f1_score(y_true, y_pred, average='macro'))  
-    #print(classification_report(y_true, y_pred))
-    #sys.exit()
-def eval(model1):
+    #print(f1_score(y_true, y_pred, average='micro'))
+    #print(f1_score(y_true, y_pred, average='macro'))  
+    micro = f1_score(y_true, y_pred, average='micro')
+    macro = f1_score(y_true, y_pred, average='macro') 
+    print(micro)
+    print(macro)  
+    return micro, macro
+def eval(model1, file):
     
     model1.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
@@ -404,7 +408,9 @@ def eval(model1):
                                                                        accuracy,
                                                                        corrects, 
                                                                        size))
-    fscore(predicates_all, target_all)
+    micro, macro = fscore(predicates_all, target_all)
+    file.write(micro+"\t"+macro)
+   
     print('\n')
     
     return avg_loss, accuracy
@@ -421,6 +427,7 @@ def train(model1, optimizer):
     hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
 
     best_acc = None
+    file = open("./rnn.txt","a") 
     for epoch in range(1, 100):
         accuracy = 0
         for batch_idx, (data, target, data2) in enumerate(train_loader):
@@ -469,7 +476,8 @@ def train(model1, optimizer):
                 #                                                              corrects,
                 #                                                              len(target)))
         # validation
-        val_loss, val_acc = eval(model1)
+        val_loss, val_acc = eval(model1, file)
+        file.write("\t"+val_loss+"\t"+val_acc+"\t"+epoch+"\n")
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")
