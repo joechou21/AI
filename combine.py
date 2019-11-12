@@ -388,7 +388,7 @@ def eval(model2, file):
                                                                        corrects, 
                                                                        size))
     micro, macro = fscore(predicates_all, target_all)
-    file.write(micro+"\t"+macro)
+    file.write(str(micro)+"\t"+str(macro))
    
     print('\n')
     
@@ -454,15 +454,15 @@ def train(model2, optimizer):
                 #                                                              corrects,
                 #                                                              len(target)))
         # validation
+        print(epoch)
         val_loss, val_acc = eval(model2, file)
-        file.write("\t"+val_loss+"\t"+val_acc+"\t"+epoch+"\n")
+        file.write("\t"+str(val_loss)+"\t"+str(val_acc)+"\t"+str(epoch)+"\n")
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")
             print("\r=> found better validated model, saving to %s" % file_path)
             print(accuracy)
             print(val_acc)
-            print(epoch)
                 #save_checkpoint(model, 
                 #            {'epoch': epoch,
                 #            'optimizer' : optimizer.state_dict(), 
