@@ -45,14 +45,15 @@ for i, x in enumerate(X_train_tokens):
         X_train_tokens[i]= x
         cnt-=1
 
-x = torch.zeros((len(X_train_tokens), bert_model.config.hidden_size)).long()
+embedding = torch.zeros((len(X_train_tokens), bert_model.config.hidden_size)).long()
 with torch.no_grad():
     for stidx in range(0, len(X_train_tokens), batch_size):
         X = X_train_tokens[stidx:stidx + batch_size]
         X = torch.LongTensor(X).cuda()
         _, pooled_output = bert_model(X)
-        x[stidx:stidx + batch_size,:] = pooled_output.cpu()
+        embedding[stidx:stidx + batch_size,:] = pooled_output.cpu()
 
+n, d = embedding.shape
 y = torch.LongTensor(np.asarray(test, dtype=np.float32))
 
 class RNN(nn.Module):
@@ -61,7 +62,10 @@ class RNN(nn.Module):
         self.hidden_size = 64
         self.num_layers = 1
         self.num_classes = 41
-        self.embedding_dim = 50
+        self.embedding_dim = d
+        self.embedding_num = n
+        self.embed = nn.Embedding(self.embedding_num, self.embedding_dim)
+        self.embed.load_state_dict({'weight': embedding})
         self.rnn = nn.GRU(self.embedding_dim, self.hidden_size, self.num_layers, batch_first=True,
                               bidirectional= True)
         #self.fc = nn.Linear(self.hidden_size, self.num_classes) 
@@ -70,9 +74,9 @@ class RNN(nn.Module):
 
     def forward(self, input_x, hidden):
         # Set initial states
-        #x = self.embed(input_x)  # dim: (batch_size, max_seq_len, embedding_size
-        print(input_x.shape)
-        packed_h, packed_h_t = self.rnn(input_x, hidden)
+        x = self.embed(input_x)  # dim: (batch_size, max_seq_len, embedding_size
+        #print(input_x.shape)
+        packed_h, packed_h_t = self.rnn(x, hidden)
         decoded = packed_h_t[-1]
         # Decode hidden state of last time step
         #logit = self.fc(decoded)
@@ -223,7 +227,7 @@ class Combine(nn.Module):
 
 
 
-dataset = Data.TensorDataset(x, y, torch.LongTensor(x2))
+dataset = Data.TensorDataset(torch.LongTensor(X_train_tokens), y, torch.LongTensor(x2))
 print(len(dataset))
 train_size = int(0.6 * len(dataset))
 print(train_size)
@@ -258,7 +262,7 @@ class Highway(nn.Module):
         self.fc2 = nn.Linear(input_size, input_size, bias=True)
 
     def forward(self, x):
-        t = F.sigmoid(self.fc1(x))
+        t = torch.sigmoid(self.fc1(x))
         return torch.mul(t, F.relu(self.fc2(x))) + torch.mul(1-t, x)        
 
 
@@ -346,7 +350,7 @@ def eval(model2, file):
                                                                        corrects, 
                                                                        size))
     micro, macro = fscore(predicates_all, target_all)
-    file.write(micro+" "+macro)
+    file.write(str(micro)+" "+str(macro))
     print('\n')
     
     return avg_loss, accuracy
@@ -411,15 +415,16 @@ def train(model2, optimizer):
                 #                                                              corrects,
                 #                                                              len(target)))
         # validation
+        print(epoch)
         val_loss, val_acc = eval(model2, file)
-        file.write("\t"+val_loss+"\t"+val_acc+"\t"+epoch+"\n")
+        file.write("\t"+str(val_loss)+"\t"+str(val_acc)+"\t"+str(epoch)+"\n")
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")
             print("\r=> found better validated model, saving to %s" % file_path)
             print(accuracy)
             print(val_acc)
-            print(epoch)
+           
                 #save_checkpoint(model, 
                 #            {'epoch': epoch,
                 #            'optimizer' : optimizer.state_dict(), 
