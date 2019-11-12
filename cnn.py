@@ -249,11 +249,11 @@ class Combine(nn.Module):
         #h0 = Variable(torch.rand(1, x.size(0), 64)).cuda()
         #c0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda())
         packed_h, packed_h_t = self.rnn(x, hidden)
-        decoded = packed_h_t[-1]
+        #decoded = packed_h_t[-1]
     
-        #logit = self.fc(decoded)
-        return decoded
-        #return F.log_softmax(logit, dim=1)
+        logit = self.fc(decoded)
+        #return decoded
+        return F.log_softmax(logit, dim=1)
 
 
 
@@ -358,10 +358,16 @@ def fscore(y_pred, y_true):
     #m = MultiLabelBinarizer().fit([y_true])
     #y_true = m.transform([y_true])
     #y_pred = m.transform(y_pred)
-    print(f1_score(y_true, y_pred, average='macro'))  
-    #print(classification_report(y_true, y_pred))
-    #sys.exit()
-def eval(model2):
+    #print(f1_score(y_true, y_pred, average='micro'))
+    #print(f1_score(y_true, y_pred, average='macro'))  
+    micro = f1_score(y_true, y_pred, average='micro')
+    macro = f1_score(y_true, y_pred, average='macro') 
+    print(micro)
+    print(macro)  
+    
+    return micro, macro
+
+def eval(model2, file):
     
     model2.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
@@ -404,7 +410,9 @@ def eval(model2):
                                                                        accuracy,
                                                                        corrects, 
                                                                        size))
-    fscore(predicates_all, target_all)
+    micro, macro = fscore(predicates_all, target_all)
+    file.write(micro+"\t"+macro)
+   
     print('\n')
     
     return avg_loss, accuracy
@@ -421,6 +429,7 @@ def train(model2, optimizer):
     #hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
 
     best_acc = None
+    file = open("./cnn.txt","a") 
     for epoch in range(1, 100):
         accuracy = 0
         for batch_idx, (data, target, data2) in enumerate(train_loader):
@@ -469,7 +478,8 @@ def train(model2, optimizer):
                 #                                                              corrects,
                 #                                                              len(target)))
         # validation
-        val_loss, val_acc = eval(model2)
+        val_loss, val_acc = eval(model2, file)
+        file.write("\t"+val_loss+"\t"+val_acc+"\t"+epoch+"\n")
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")

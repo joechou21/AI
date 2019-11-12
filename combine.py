@@ -349,7 +349,7 @@ def fscore(y_pred, y_true):
     return micro, macro
     #print(classification_report(y_true, y_pred))
     #sys.exit()
-def eval(model2):
+def eval(model2, file):
     
     model2.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
@@ -454,7 +454,7 @@ def train(model2, optimizer):
                 #                                                              corrects,
                 #                                                              len(target)))
         # validation
-        val_loss, val_acc = eval(model2)
+        val_loss, val_acc = eval(model2, file)
         file.write("\t"+val_loss+"\t"+val_acc+"\t"+epoch+"\n")
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
