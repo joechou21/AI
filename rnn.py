@@ -427,8 +427,8 @@ def train(model1, optimizer):
     hidden1 = Variable(torch.zeros(2, 8, 64).cuda())
 
     best_acc = None
-    file = open("./rnn.txt","a") 
     for epoch in range(1, 100):
+        file = open("./rnn.txt","a") 
         accuracy = 0
         for batch_idx, (data, target, data2) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
@@ -478,7 +478,8 @@ def train(model1, optimizer):
         # validation
         print(epoch)
         val_loss, val_acc = eval(model1, file)
-        file.write("\t"+str(val_loss)+"\t"+str(val_acc)+"\t"+str(epoch)+"\n")
+        file.write("\t"+str(val_loss.item())+"\t"+str(val_acc.item())+"\t"+str(epoch)+"\n")
+        file.close()
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")

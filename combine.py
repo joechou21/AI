@@ -274,15 +274,15 @@ print(test_size)
 train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 #dataset = Data.TensorDataset(torch.LongTensor(x2), y)
 train_loader = torch.utils.data.DataLoader(train_dataset,
-                                           batch_size=2,
+                                           batch_size=8,
                                            shuffle=True)
 
 val_loader = torch.utils.data.DataLoader(val_dataset,
-                                           batch_size=2,
+                                           batch_size=8,
                                            shuffle=False)
 
 test_loader = torch.utils.data.DataLoader(test_dataset,
-                                           batch_size=2,
+                                           batch_size=8,
                                            shuffle=False)
 
 
@@ -354,14 +354,14 @@ def eval(model2, file):
     model2.eval()
     corrects, avg_loss, accumulated_loss, size = 0, 0, 0, 0
     predicates_all, target_all = [], []
-    hidden2 = Variable(torch.zeros(1, 2, 64).cuda())
-    hidden = Variable(torch.zeros(2, 2, 64).cuda())
+    hidden2 = Variable(torch.zeros(1, 8, 64).cuda())
+    hidden = Variable(torch.zeros(2, 8, 64).cuda())
     with torch.no_grad():
         for batch_idx, (data, target, data2) in enumerate(val_loader):
             model2.zero_grad()
 
             size += len(target)
-            if data2.size(0)!=2:
+            if data2.size(0)!=8:
                 continue
             if torch.cuda.is_available():
                 data, target = Variable(data).cuda(), Variable(target).cuda()
@@ -404,8 +404,8 @@ def train(model2, optimizer):
     #model1.train()
     #model2.train()
     model2.train()
-    hidden2 = Variable(torch.zeros(1, 2, 64).cuda())
-    hidden = Variable(torch.zeros(2, 2, 64).cuda())
+    hidden2 = Variable(torch.zeros(1, 8, 64).cuda())
+    hidden = Variable(torch.zeros(2, 8, 64).cuda())
 
     best_acc = None
     file = open("./combine.txt","a") 
@@ -413,7 +413,7 @@ def train(model2, optimizer):
         accuracy = 0
         for batch_idx, (data, target, data2) in enumerate(train_loader):
             #data, target, =data_helpers.sorting_sequence(data, target)
-            if data2.size(0)!=2:
+            if data2.size(0)!=8:
                 continue
             if torch.cuda.is_available():
                 data, target = Variable(data).cuda(), Variable(target).cuda()
@@ -438,7 +438,7 @@ def train(model2, optimizer):
     
             loss.backward()
             #torch.nn.utils.clip_grad_norm_(list(model1.parameters()) + list(model2.parameters())
-            #    + list(model3.parameters()), 0.5)        
+            torch.nn.utils.clip_grad_norm_(model2.parameters(), 0.5)        
             optimizer.step()
 
 
@@ -456,7 +456,7 @@ def train(model2, optimizer):
         # validation
         print(epoch)
         val_loss, val_acc = eval(model2, file)
-        file.write("\t"+str(val_loss)+"\t"+str(val_acc)+"\t"+str(epoch)+"\n")
+        file.write("\t"+str(val_loss.item())+"\t"+str(val_acc.item())+"\t"+str(epoch)+"\n")
         # save best validation epoch model
         if best_acc is None or val_acc > best_acc:
             file_path = '%s/AI_best.pth.tar' % ("./")
